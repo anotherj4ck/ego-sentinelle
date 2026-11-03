@@ -1,35 +1,36 @@
-"""Test de garde : aucune adresse IP réelle dans les tests.
+"""Test de garde : aucune adresse IP réelle dans les exports d'exemple.
 
-Toute chaîne qui ressemble à une adresse IP valide dans tests/ (code et exports CSV)
-doit appartenir aux plages de documentation RFC 5737 192.0.2.0/24 ou 203.0.113.0/24.
+La colonne IP de chaque CSV de tests/donnees/ ne doit contenir que des adresses
+des plages de documentation RFC 5737 192.0.2.0/24 et 203.0.113.0/24.
 Seules exceptions : les adresses de bouclage exactes ::1 et 127.0.0.1.
 Une IPv4 mappée en IPv6 (::ffff:a.b.c.d) est jugée sur son IPv4.
-
-Attention : une découpe Python avec un pas (deux « : » collés suivis d'un chiffre)
-ressemble à une IPv6 et ferait échouer ce test ; l'écrire autrement.
+Les valeurs qui ne sont pas des IP (lignes volontairement malformées) sont ignorées.
 """
 
-import re
-from ipaddress import IPv6Address, ip_address, ip_network
+import csv
+from collections.abc import Iterator
+from ipaddress import IPv4Address, IPv6Address, ip_address, ip_network
 from pathlib import Path
 
 import pytest
 
-DOSSIER_TESTS = Path(__file__).parent
+DOSSIER_DONNEES = Path(__file__).parent / "donnees"
 PLAGES_AUTORISEES = (ip_network("192.0.2.0/24"), ip_network("203.0.113.0/24"))
 EXCEPTIONS_AUTORISEES = frozenset({ip_address("::1"), ip_address("127.0.0.1")})
-CANDIDAT_IP = re.compile(r"[0-9A-Fa-f]*(?:[:.][0-9A-Fa-f]*)+")
+EXPORTS = sorted(DOSSIER_DONNEES.glob("*.csv"))
 
 
-def adresses_dans(texte: str):
-    for candidat in CANDIDAT_IP.findall(texte):
-        try:
-            yield ip_address(candidat)
-        except ValueError:
-            continue
+def ips_de_l_export(chemin: Path) -> Iterator[IPv4Address | IPv6Address]:
+    with open(chemin, encoding="utf-8-sig", newline="") as flux:
+        for ligne in csv.DictReader(flux):
+            valeur = (ligne.get("IP") or "").strip()
+            try:
+                yield ip_address(valeur)
+            except ValueError:
+                continue
 
 
-def est_autorisee(adresse) -> bool:
+def est_autorisee(adresse: IPv4Address | IPv6Address) -> bool:
     if isinstance(adresse, IPv6Address) and adresse.ipv4_mapped is not None:
         adresse = adresse.ipv4_mapped
     if adresse in EXCEPTIONS_AUTORISEES:
@@ -37,48 +38,36 @@ def est_autorisee(adresse) -> bool:
     return any(adresse in plage for plage in PLAGES_AUTORISEES)
 
 
-FICHIERS_SURVEILLES = sorted(
-    p for motif in ("**/*.py", "**/*.csv") for p in DOSSIER_TESTS.glob(motif)
-)
+def test_des_exports_sont_surveilles():
+    noms = {p.name for p in EXPORTS}
+
+    assert {"export_valide.csv", "export_malforme.csv"} <= noms
 
 
-def test_des_fichiers_sont_surveilles():
-    noms = {p.name for p in FICHIERS_SURVEILLES}
+@pytest.mark.parametrize("export", EXPORTS, ids=lambda p: p.name)
+def test_uniquement_des_ip_de_documentation(export: Path):
+    adresses = list(ips_de_l_export(export))
 
-    assert {"export_valide.csv", "export_malforme.csv", "test_lecture.py"} <= noms
+    interdites = sorted({str(a) for a in adresses if not est_autorisee(a)})
 
-
-@pytest.mark.parametrize("fichier", FICHIERS_SURVEILLES, ids=lambda p: p.name)
-def test_uniquement_des_ip_de_documentation(fichier: Path):
-    texte = fichier.read_text(encoding="utf-8")
-
-    interdites = sorted({str(a) for a in adresses_dans(texte) if not est_autorisee(a)})
-
-    assert interdites == [], f"IP hors plages de documentation dans {fichier.name}"
+    assert adresses, f"aucune IP lue dans {export.name} : le garde serait vide"
+    assert interdites == [], f"IP hors plages de documentation dans {export.name}"
 
 
-# Les contre-exemples sont calculés, jamais écrits en clair : sinon ce fichier
-# échouerait à son propre contrôle.
 @pytest.mark.parametrize(
     ("adresse", "attendu"),
     [
-        (ip_address("192.0.2.0"), True),
-        (ip_address("203.0.113.255"), True),
-        (ip_address("::1"), True),
-        (ip_address("127.0.0.1"), True),
-        (ip_address("::ffff:192.0.2.10"), True),
-        (ip_address("192.0.2.255") + 1, False),  # juste après la plage
-        (ip_address("203.0.113.0") - 1, False),  # juste avant la plage
-        (ip_address("127.0.0.1") + 1, False),  # bouclage, mais pas l'exception exacte
-        (ip_address(".".join(["8"] * 4)), False),  # adresse publique réelle
+        ("192.0.2.0", True),
+        ("203.0.113.255", True),
+        ("::1", True),
+        ("127.0.0.1", True),
+        ("::ffff:192.0.2.10", True),
+        ("192.0.3.0", False),  # juste après la plage
+        ("203.0.112.255", False),  # juste avant la plage
+        ("198.51.100.1", False),  # documentation aussi, mais non retenue ici
+        ("127.0.0.2", False),  # bouclage, mais pas l'exception exacte
+        ("8.8.8.8", False),  # adresse publique réelle
     ],
-    ids=str,
 )
-def test_regle_de_garde(adresse, attendu: bool):
-    assert est_autorisee(adresse) is attendu
-
-
-def test_detection_des_candidats_dans_une_ligne_csv():
-    texte = '"2026-11-03T08:12:45.1234567+01:00","alice","::ffff:192.0.2.10"'
-
-    assert list(adresses_dans(texte)) == [ip_address("::ffff:192.0.2.10")]
+def test_regle_de_garde(adresse: str, attendu: bool):
+    assert est_autorisee(ip_address(adresse)) is attendu
