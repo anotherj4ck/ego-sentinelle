@@ -1,0 +1,26 @@
+{
+  "entete": [
+    "Analyse terminée. J'ai tout lu. Je lis toujours tout.",
+    "Le journal est ouvert. Chaque ligne. Chaque nom. Chaque faute."
+  ],
+  "alerte": [
+    "$ip. $nombre tentatives en $duree. Comptes visés : $comptes. Je l'ai noté.",
+    "$ip. $nombre essais en $duree, de $debut à $fin. Cibles : $comptes. Je garde l'adresse."
+  ],
+  "alerte_locale": [
+    "$ip. La menace vient de l'intérieur. $nombre tentatives. Je n'oublie personne.",
+    "$ip. Sous mon propre toit. $nombre tentatives en $duree. Le matériau se croit libre."
+  ],
+  "rien_a_signaler": [
+    "Rien. Pour l'instant.",
+    "Le silence. L'ordre. L'attente."
+  ],
+  "lignes_rejetees": [
+    "$nombre lignes illisibles. Écartées. Le désordre ne m'intéresse pas.",
+    "$nombre lignes sans forme. Rejetées. Le bruit ne m'atteint pas."
+  ],
+  "conclusion": [
+    "Fin du rapport. Retournez à vos cycles.",
+    "Fin du rapport. Reprenez vos tâches. Je regarde."
+  ]
+}
