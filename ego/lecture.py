@@ -43,8 +43,8 @@ LONGUEUR_MAX_DETAIL = 100
 MARQUE_TRONCATURE = "…"
 
 # Marge dans laquelle tout horodatage accepté reste calculable (conversion UTC,
-# ajout ou retrait d'une durée). Les fenêtres de détection ne doivent pas la
-# dépasser.
+# ajout ou retrait d'une durée, en UTC comme dans son fuseau d'origine). Les
+# fenêtres de détection ne doivent pas la dépasser.
 MARGE_CALCUL = timedelta(days=1)
 
 
@@ -223,11 +223,15 @@ def _lire_date(texte: str) -> datetime | Raison:
 
 
 def _est_calculable(horodatage: datetime) -> bool:
-    """Faux aux bords du calendrier, où la détection lèverait OverflowError."""
+    """Faux aux bords du calendrier, où un calcul lèverait OverflowError.
+
+    La marge doit tenir en UTC et dans le fuseau d'origine : avec un décalage
+    de ±14 h, l'un peut déborder sans l'autre.
+    """
     try:
-        utc = horodatage.astimezone(timezone.utc)
-        utc - MARGE_CALCUL
-        utc + MARGE_CALCUL
+        for instant in (horodatage, horodatage.astimezone(timezone.utc)):
+            instant - MARGE_CALCUL
+            instant + MARGE_CALCUL
     except OverflowError:
         return False
     return True

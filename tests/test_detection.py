@@ -4,7 +4,7 @@ from ipaddress import ip_address
 import pytest
 
 from ego.detection import FENETRE, SEUIL_ECHECS, Alerte, detecter
-from ego.lecture import MARGE_CALCUL, Evenement
+from ego.lecture import MARGE_CALCUL, Evenement, lire_export
 
 PLUS_UNE_HEURE = timezone(timedelta(hours=1))
 T0 = datetime(2026, 11, 3, 8, 0, tzinfo=PLUS_UNE_HEURE)
@@ -37,6 +37,11 @@ class TestSeuil:
 
         assert [(str(a.ip), a.pic) for a in alertes] == [(IP_A, 5)]
 
+    def test_seuil_un_un_seul_echec_suffit(self):
+        alertes = detecter(rafale(timedelta(0)), seuil=1)
+
+        assert [(str(a.ip), a.pic, a.total) for a in alertes] == [(IP_A, 1, 1)]
+
 
 class TestFenetre:
     def test_cinq_echecs_en_exactement_dix_minutes_borne_incluse(self):
@@ -44,6 +49,15 @@ class TestFenetre:
         evenements = rafale(*minutes(10, 0, 7, 2, 5))
 
         assert len(detecter(evenements)) == 1
+
+    def test_borne_incluse_a_la_microseconde_pres(self):
+        # Écart exact de FENETRE entre deux instants non ronds.
+        une_us = timedelta(microseconds=1)
+        decalages = [une_us, *minutes(2, 5, 7), FENETRE + une_us]
+
+        alertes = detecter(rafale(*decalages))
+
+        assert [a.fin_pic - a.debut_pic for a in alertes] == [FENETRE]
 
     def test_cinq_echecs_etales_sur_plus_de_dix_minutes_ignores(self):
         decalages = minutes(0, 2, 5, 7) + [FENETRE + timedelta(microseconds=1)]
@@ -115,6 +129,23 @@ class TestOrdre:
             IP_A,
             IP_B,
         ]
+
+    def test_a_pic_egal_ipv4_avant_ipv6(self):
+        cinq = minutes(0, 1, 2, 3, 4)
+        evenements = rafale(*cinq, ip="::1") + rafale(*cinq, ip="127.0.0.1")
+
+        alertes = detecter(evenements)
+
+        assert [str(a.ip) for a in alertes] == ["127.0.0.1", "::1"]
+
+    def test_a_pic_egal_ordre_numerique_et_non_textuel(self):
+        # En texte, "192.0.2.10" < "192.0.2.9" ; en valeur, c'est l'inverse.
+        cinq = minutes(0, 1, 2, 3, 4)
+        evenements = rafale(*cinq, ip="192.0.2.10") + rafale(*cinq, ip="192.0.2.9")
+
+        alertes = detecter(evenements)
+
+        assert [str(a.ip) for a in alertes] == ["192.0.2.9", "192.0.2.10"]
 
 
 class TestParametres:
@@ -200,8 +231,6 @@ class TestCasParticuliers:
 
 class TestIntegrationLecture:
     def test_export_d_attaque(self, donnees):
-        from ego.lecture import lire_export
-
         lecture = lire_export(donnees / "export_attaque.csv")
 
         alertes = detecter(lecture.evenements)

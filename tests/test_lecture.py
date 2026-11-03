@@ -145,6 +145,9 @@ class TestDates:
             "9999-12-31T23:59:59-23:59",  # conversion UTC impossible
             "0001-01-01T00:00:00Z",  # date - fenêtre impossible
             "9999-12-31T23:55:00Z",  # date + 10 min impossible
+            # Calculables en UTC, mais pas dans leur fuseau d'origine :
+            "9999-12-31T13:00:00+14:00",  # date + marge impossible
+            "0001-01-01T10:00:00-14:00",  # date - marge impossible
         ],
     )
     def test_date_aux_limites_du_calendrier_rejetee(self, date):
