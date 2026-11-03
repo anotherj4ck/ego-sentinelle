@@ -1,3 +1,4 @@
+import csv
 import io
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,16 @@ def analyser(*lignes: str, en_tete: str = EN_TETE):
 
 def ligne(date: str = DATE_OK, compte: str = "alice", ip: str = "192.0.2.10") -> str:
     return f'"{date}","{compte}","{ip}"'
+
+
+@pytest.fixture(params=[None, 300_000], ids=["limite-par-defaut", "limite-relevee"])
+def limite_champ_csv(request) -> int:
+    """Limite de taille de champ du module csv (état global), restaurée ensuite."""
+    precedente = csv.field_size_limit()
+    if request.param is not None:
+        csv.field_size_limit(request.param)
+    yield csv.field_size_limit()
+    csv.field_size_limit(precedente)
 
 
 def seul_rejet(resultat) -> LigneRejetee:
@@ -108,6 +119,39 @@ class TestDates:
 
         assert rejet.raison is Raison.DATE_ILLISIBLE
 
+    @pytest.mark.parametrize(
+        "date",
+        [
+            "20261103T081245+01",  # format compact
+            "2026-11-03T08+01:00",  # heure seule
+            "2026-W44-2T08:12:45+01:00",  # date par semaine
+            "2026-11-03T08:12:45,5+01:00",  # virgule décimale
+            "2026-11-03 08:12:45+01:00",  # espace au lieu de T
+            "2026-11-03T08:12:45+00:00:30",  # décalage avec secondes
+            "2026-11-03T24:00:00+01:00",  # 24 h = lendemain
+            "2026-11-03T08:12:45.12345678+01:00",  # 8 décimales
+            "2026-11-03T08:12:45z",  # z minuscule
+        ],
+    )
+    def test_seul_le_format_o_est_accepte(self, date):
+        rejet = seul_rejet(analyser(ligne(date=date)))
+
+        assert rejet.raison is Raison.DATE_ILLISIBLE
+
+    @pytest.mark.parametrize(
+        "date",
+        [
+            "0001-01-01T00:00:00+23:59",  # conversion UTC impossible
+            "9999-12-31T23:59:59-23:59",  # conversion UTC impossible
+            "0001-01-01T00:00:00Z",  # date - fenêtre impossible
+            "9999-12-31T23:55:00Z",  # date + 10 min impossible
+        ],
+    )
+    def test_date_aux_limites_du_calendrier_rejetee(self, date):
+        rejet = seul_rejet(analyser(ligne(date=date)))
+
+        assert rejet.raison is Raison.DATE_ILLISIBLE
+
 
 class TestIP:
     @pytest.mark.parametrize("ip", ["-", "", "   "])
@@ -118,6 +162,13 @@ class TestIP:
 
     @pytest.mark.parametrize("ip", ["192.0.2.999", "pas-une-ip", "192.0.2"])
     def test_ip_invalide_rejetee(self, ip):
+        rejet = seul_rejet(analyser(ligne(ip=ip)))
+
+        assert rejet.raison is Raison.IP_INVALIDE
+        assert rejet.detail == ip
+
+    @pytest.mark.parametrize("ip", ["::1%12", "::ffff:192.0.2.10%3"])
+    def test_ipv6_avec_identifiant_de_zone_rejetee(self, ip):
         rejet = seul_rejet(analyser(ligne(ip=ip)))
 
         assert rejet.raison is Raison.IP_INVALIDE
@@ -150,6 +201,12 @@ class TestLignesMalformees:
 
         assert [e.compte for e in resultat.evenements] == ["alice", "ines"]
 
+    def test_numero_de_debut_pour_un_champ_sur_plusieurs_lignes(self):
+        # Ligne 2-3 : compte sur deux lignes et IP absente ; ligne 4 : IP absente.
+        resultat = analyser(f'"{DATE_OK}","a\nb","-"', ligne(ip="-"))
+
+        assert [r.numero for r in resultat.rejets] == [2, 4]
+
     def test_ligne_vide_ignoree_sans_rejet(self):
         resultat = analyser(ligne(), "", ligne(compte="bob"))
 
@@ -168,12 +225,22 @@ class TestLignesMalformees:
         assert rejet.raison is Raison.COLONNES
         assert rejet.detail == "4 champs au lieu de 3"
 
-    def test_champ_trop_long_rejete_et_lecture_poursuivie(self):
-        resultat = analyser("x" * 200_000, ligne(compte="bob"))
+    def test_champ_trop_long_rejete_et_lecture_poursuivie(self, limite_champ_csv):
+        resultat = analyser("x" * (limite_champ_csv + 1), ligne(compte="bob"))
 
         rejets = [(r.numero, r.raison) for r in resultat.rejets]
         assert rejets == [(2, Raison.CSV_ILLISIBLE)]
         assert [e.compte for e in resultat.evenements] == ["bob"]
+
+    def test_detail_long_tronque_a_100_caracteres(self):
+        rejet = seul_rejet(analyser(ligne(date="9" * 5000)))
+
+        assert rejet.detail == "9" * 99 + "…"
+
+    def test_detail_de_100_caracteres_conserve_tel_quel(self):
+        rejet = seul_rejet(analyser(ligne(ip="9" * 100)))
+
+        assert rejet.detail == "9" * 100
 
     def test_octet_nul_dans_ip_rejete(self):
         rejet = seul_rejet(analyser(ligne(ip="192.0.2.10\x00")))
@@ -208,9 +275,9 @@ class TestEnTete:
         with pytest.raises(ErreurFormat, match="vide"):
             analyser_csv(io.StringIO("", newline=""))
 
-    def test_en_tete_illisible_erreur(self):
+    def test_en_tete_illisible_erreur(self, limite_champ_csv):
         with pytest.raises(ErreurFormat, match="illisible"):
-            analyser(ligne(), en_tete="x" * 200_000)
+            analyser(ligne(), en_tete="x" * (limite_champ_csv + 1))
 
     def test_en_tete_seul_donne_un_resultat_vide(self):
         resultat = analyser()
