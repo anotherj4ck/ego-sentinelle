@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["ego", "sentinelle"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

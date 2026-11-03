@@ -1,0 +1,4 @@
+# Dépendances de développement uniquement (tests).
+# L'outil lui-même n'utilise que la bibliothèque standard.
+pytest==9.2.0
+pytest-cov==7.1.0
