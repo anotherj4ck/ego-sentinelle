@@ -1,11 +1,11 @@
 """Test de garde : la voix d'Ego dans modeles/ego.json.
 
 Règles vérifiées mécaniquement :
-- aucun mot interdit (excuse, remerciement, IA, machine, programme, mon enfant…),
-  sans tenir compte des majuscules ni des accents ;
+- aucune formule interdite (pardon, désolé, je m'excuse, merci…) ni IA, machine,
+  programme, mon enfant ; sans tenir compte des majuscules ni des accents ;
 - phrases courtes ;
-- menace calme et sans hésitation : ni « ! », ni points de suspension,
-  ni « peut-être », « je crois »… ;
+- menace calme et sans hésitation : ni « ! », ni « peut-être », « je crois »… ;
+  les points de suspension, tic d'Ego, sont autorisés ;
 - aucun nom propre hormis Londinium.
 Le reste de la voix (impératifs, triades, humains vus comme un matériau) relève
 de l'écriture et se relit.
@@ -29,17 +29,21 @@ VARIANTES = [
     for rang, texte in enumerate(REPLIQUES.get(cle, []), start=1)
 ]
 
-# Sur un texte sans accents et en minuscules. Les formes dérivées comptent :
-# « pardonnez », « excusez », « remercie », « programmé », « machines ».
+# Sur un texte sans accents et en minuscules. Formules d'excuse ou de
+# remerciement, et non racines : « Je ne pardonne pas », « sans merci » et
+# « Mercier » passent. Ego ne se dit ni IA, ni machine, ni programme.
 MOTS_INTERDITS = re.compile(
-    r"\b(?:desole\w*|pardon\w*|excus\w*|merci\w*|remerci\w*|ia"
-    r"|intelligence\s+artificielle|machine\w*|programm\w*|mon\s+enfant)\b"
+    r"\b(?:pardon|pardonnez-moi|desolee?s?|je\s+m['’]excuse|excusez-moi"
+    r"|(?<!sans\s)merci|ia|intelligence\s+artificielle|machine\w*|programm\w*"
+    r"|mon\s+enfant)\b"
 )
 MOTS_MAX_PAR_PHRASE = 10
 NOMS_PROPRES_AUTORISES = frozenset({"Londinium"})
-# Menace calme : pas d'exclamation. Jamais d'hésitation.
+ELISION = re.compile(r"^\w+['’]")  # l', d', qu', jusqu'…
+# Menace calme : pas d'exclamation. Jamais d'hésitation. Les points de
+# suspension, tic d'Ego, sont autorisés.
 AGITATION = re.compile(
-    r"!|\.\.\.|…|\b(?:peut-etre|je\s+crois|je\s+pense|il\s+semble"
+    r"!|\b(?:peut-etre|je\s+crois|je\s+pense|il\s+semble"
     r"|probablement|sans\s+doute)\b"
 )
 
@@ -71,12 +75,15 @@ def marques_d_agitation(texte: str) -> list[str]:
 
 
 def noms_propres_interdits(texte: str) -> list[str]:
-    """Mots à majuscule hors début de phrase, sauf les noms autorisés."""
+    """Mots à majuscule hors début de phrase, sauf les noms autorisés.
+
+    L'élision est retirée d'abord : « l'Ego » est jugé sur « Ego ».
+    """
     return [
-        mot
+        nom
         for phrase in phrases(texte)
-        for mot in mots(phrase)[1:]
-        if mot[0].isupper() and mot not in NOMS_PROPRES_AUTORISES
+        for nom in (ELISION.sub("", mot) for mot in mots(phrase)[1:])
+        if nom[:1].isupper() and nom not in NOMS_PROPRES_AUTORISES
     ]
 
 
@@ -89,9 +96,10 @@ class TestRegleMotsInterdits:
             "Pardon.",
             "Pardonnez-moi.",
             "Je m'excuse.",
-            "Excusez ce retard.",
+            "Je m’excuse.",  # apostrophe typographique
+            "Excusez-moi.",
             "Merci.",
-            "Je vous remercie.",
+            "Merci pour votre patience.",
             "L'IA a parlé.",
             "Une intelligence  artificielle veille.",
             "La machine voit.",
@@ -109,6 +117,10 @@ class TestRegleMotsInterdits:
         [
             "La faim. Le doute. Le désordre.",
             "Le geste est machinal.",  # « machinal » n'est pas « machine »
+            "Je ne pardonne pas.",  # formules, pas racines
+            "Une guerre sans merci.",
+            "Mercier attend.",
+            "Sans merci.",
             "Via le réseau.",  # « ia » au milieu d'un mot
             "Les enfants de Londinium dorment.",
         ],
@@ -140,8 +152,7 @@ class TestRegleCalme:
         "texte",
         [
             "Je vous vois !",
-            "Je vous vois...",
-            "Je vous vois…",
+            "Je vous vois!",
             "Peut-être.",
             "Je crois que c'est fini.",
             "Je pense que oui.",
@@ -153,8 +164,19 @@ class TestRegleCalme:
     def test_agitation_ou_hesitation_detectee(self, texte):
         assert marques_d_agitation(texte) != []
 
-    def test_menace_calme_acceptee(self):
-        assert marques_d_agitation("Rien. Pour l'instant.") == []
+    @pytest.mark.parametrize(
+        "texte",
+        [
+            "Rien. Pour l'instant.",
+            "Je vous vois...",
+            "Je vous vois…",
+            "Rien… encore.",
+        ],
+        ids=["calme", "trois-points", "points-de-suspension", "suspension-interne"],
+    )
+    def test_menace_calme_acceptee(self, texte):
+        # Les points de suspension sont un tic d'Ego : autorisés.
+        assert marques_d_agitation(texte) == []
 
 
 class TestRegleNomsPropres:
@@ -164,6 +186,8 @@ class TestRegleNomsPropres:
             ("Je connais Paris.", ["Paris"]),
             ("Ici parle Ego. Retournez au travail.", ["Ego"]),
             ("Comptes visés : $comptes. Je préviens Marc et Lise.", ["Marc", "Lise"]),
+            ("Je vois l'Ego.", ["Ego"]),  # élision
+            ("La voix d’Ego.", ["Ego"]),  # apostrophe typographique
         ],
     )
     def test_nom_propre_detecte(self, texte, attendu):
@@ -175,6 +199,8 @@ class TestRegleNomsPropres:
             "Londinium dort. Je veille sur Londinium.",
             "Analyse terminée. J'ai tout lu.",  # majuscules de début de phrase
             "$ip. La menace vient de l'intérieur.",
+            "Le silence. L'ordre. L'attente.",  # élision en début de phrase
+            "Je garde l'adresse d'aujourd'hui.",
         ],
     )
     def test_londinium_et_debuts_de_phrase_acceptes(self, texte):

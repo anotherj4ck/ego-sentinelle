@@ -48,10 +48,43 @@ class TestUnicodeInvisible:
         assert neutraliser(f"a{caractere}b") == f"a{attendu}b"
 
 
+class TestCaracteresTrompeurs:
+    @pytest.mark.parametrize(
+        ("caractere", "attendu"),
+        [
+            ("", "\\ue000"),  # usage privé (Co)
+            (" ", "\\xa0"),  # espace insécable (Zs)
+            (" ", "\\u2003"),  # espace cadratin (Zs)
+            (" ", "\\u202f"),  # espace fine insécable (Zs)
+            ("　", "\\u3000"),  # espace idéographique (Zs)
+            ("ㅤ", "\\u3164"),  # remplissage Hangul : lettre invisible
+            ("ᅟ", "\\u115f"),  # remplissage initial Hangul
+            ("⠀", "\\u2800"),  # braille vide
+            ("�", "\\ufffd"),  # caractère de remplacement
+        ],
+        ids=["Co", "NBSP", "EMSP", "NNBSP", "IDSP", "HF", "HCF", "braille", "FFFD"],
+    )
+    def test_blancs_et_caracteres_trompeurs_neutralises(self, caractere, attendu):
+        assert neutraliser(f"a{caractere}b") == f"a{attendu}b"
+
+    def test_compte_d_apparence_vide_rendu_visible(self):
+        assert neutraliser("ㅤㅤ") == "\\u3164\\u3164"
+
+
 class TestTexteOrdinaire:
     @pytest.mark.parametrize(
         "texte",
-        ["", "administrateur", "Hélène-Æsa_02", "DOMAINE\\bob", "用户", "admin 2"],
+        ["", "administrateur", "Hélène-Æsa_02", "用户", "admin 2"],
     )
     def test_texte_imprimable_inchange(self, texte):
         assert neutraliser(texte) == texte
+
+
+class TestBarreObliqueInverse:
+    def test_barre_oblique_doublee(self):
+        assert neutraliser("DOMAINE\\bob") == "DOMAINE\\\\bob"
+
+    def test_texte_litteral_distinct_d_un_esc_neutralise(self):
+        # Sans doublement, le texte « \x1b » et un vrai ESC donneraient le même
+        # affichage : un attaquant pourrait simuler une neutralisation.
+        assert neutraliser("\\x1b") != neutraliser("\x1b")

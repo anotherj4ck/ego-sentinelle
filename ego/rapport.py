@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from string import Template
 
 from ego.detection import Alerte
-from ego.lecture import LigneRejetee
+from ego.lecture import MARQUE_TRONCATURE, LigneRejetee
 from ego.modeles import Modeles
 from ego.neutralisation import neutraliser
 
@@ -14,6 +14,9 @@ UNITES = (("jour", 86_400), ("heure", 3_600), ("minute", 60), ("seconde", 1))
 MOINS_D_UNE_SECONDE = "moins d'une seconde"
 COMPTE_SANS_NOM = "(sans nom)"
 SEPARATEUR_COMPTES = ", "
+# Un export hostile ne doit pas pouvoir noyer le rapport sous ses noms tentés.
+LONGUEUR_MAX_COMPTE = 64
+COMPTES_MAX_AFFICHES = 10
 
 
 def formater_duree(duree: timedelta) -> str:
@@ -122,10 +125,25 @@ def _valeurs(alerte: Alerte) -> dict[str, str]:
 
 
 def _formater_comptes(comptes: tuple[str, ...]) -> str:
-    # Noms tentés par l'attaquant : neutralisés avant tout affichage.
-    return SEPARATEUR_COMPTES.join(
-        neutraliser(compte) or COMPTE_SANS_NOM for compte in comptes
+    affiches = SEPARATEUR_COMPTES.join(
+        _formater_compte(compte) for compte in comptes[:COMPTES_MAX_AFFICHES]
     )
+    autres = len(comptes) - COMPTES_MAX_AFFICHES
+    if autres <= 0:
+        return affiches
+    return f"{affiches} et {autres} autre{'s' if autres > 1 else ''}"
+
+
+def _formater_compte(compte: str) -> str:
+    """Nom tenté par l'attaquant : tronqué, puis neutralisé, puis "(sans nom)".
+
+    Tronquer d'abord : couper après neutralisation pourrait scinder un
+    échappement (« \\x1b »). La marque de troncature est ajoutée après coup.
+    """
+    if len(compte) <= LONGUEUR_MAX_COMPTE:
+        return neutraliser(compte) or COMPTE_SANS_NOM
+    garde = LONGUEUR_MAX_COMPTE - len(MARQUE_TRONCATURE)
+    return neutraliser(compte[:garde]) + MARQUE_TRONCATURE
 
 
 def _replique(

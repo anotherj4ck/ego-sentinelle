@@ -6,8 +6,15 @@ import unicodedata
 # Cf : caractères de format invisibles, dont tous les contrôles bidirectionnels
 #      (U+202A-U+202E, U+2066-U+2069, U+200E, U+200F, U+061C).
 # Cs : demi-codets isolés, que l'encodage de sortie refuserait.
+# Co : usage privé, sans glyphe convenu.
+# Zs : espaces, sauf l'espace ordinaire (insécables, cadratins…, trompeurs).
 # Zl, Zp : séparateurs de ligne et de paragraphe (U+2028, U+2029).
-CATEGORIES_NEUTRALISEES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+CATEGORIES_NEUTRALISEES = frozenset({"Cc", "Cf", "Co", "Cs", "Zs", "Zl", "Zp"})
+ESPACE_ORDINAIRE = " "
+BARRE_OBLIQUE_INVERSE = "\\"
+# Lettres ou symboles qui s'affichent comme un blanc : un compte qui n'en
+# contient que paraîtrait vide.
+CARACTERES_INVISIBLES = frozenset({"ㅤ", "ᅟ", "⠀", "�"})
 
 
 def neutraliser(texte: str) -> str:
@@ -19,8 +26,21 @@ def neutraliser(texte: str) -> str:
     return "".join(_neutraliser_caractere(c) for c in texte)
 
 
+def _est_dangereux(caractere: str) -> bool:
+    if caractere == ESPACE_ORDINAIRE:
+        return False
+    return (
+        caractere in CARACTERES_INVISIBLES
+        or unicodedata.category(caractere) in CATEGORIES_NEUTRALISEES
+    )
+
+
 def _neutraliser_caractere(caractere: str) -> str:
-    if unicodedata.category(caractere) not in CATEGORIES_NEUTRALISEES:
+    # Doubler la barre oblique rend l'échappement non ambigu : le texte
+    # « \x1b » devient « \\x1b », un vrai ESC devient « \x1b ».
+    if caractere == BARRE_OBLIQUE_INVERSE:
+        return BARRE_OBLIQUE_INVERSE * 2
+    if not _est_dangereux(caractere):
         return caractere
     point = ord(caractere)
     return f"\\x{point:02x}" if point <= 0xFF else f"\\u{point:04x}"

@@ -166,6 +166,35 @@ class TestComptes:
         assert "‮" not in texte
         assert "comptes=[admin\\u202enimda]" in texte
 
+    @pytest.mark.parametrize(
+        ("compte", "affiche"),
+        [
+            ("a" * 64, "a" * 64),
+            ("a" * 65, "a" * 63 + "…"),
+            ("a" * 5000, "a" * 63 + "…"),
+            # Tronqué AVANT neutralisation : aucun « \x1b » coupé en deux.
+            ("\x1b" * 100, "\\x1b" * 63 + "…"),
+        ],
+        ids=["64-garde", "65-tronque", "tres-long", "esc-tronque-puis-neutralise"],
+    )
+    def test_nom_tronque_a_64_caracteres_avant_neutralisation(self, compte, affiche):
+        texte = rapport([alerte(comptes=(compte,))])
+
+        assert f"comptes=[{affiche}]" in texte
+
+    @pytest.mark.parametrize(
+        ("nombre", "suite"),
+        [(10, ""), (11, " et 1 autre"), (2500, " et 2490 autres")],
+        ids=["10-tous", "11-un-autre", "2500"],
+    )
+    def test_au_plus_dix_comptes_puis_et_n_autres(self, nombre, suite):
+        comptes = tuple(f"c{n:04d}" for n in range(nombre))
+        dix = ", ".join(comptes[:10])
+
+        texte = rapport([alerte(comptes=comptes)])
+
+        assert f"comptes=[{dix}{suite}]" in texte
+
     def test_dollar_dans_un_compte_reste_litteral(self):
         texte = rapport([alerte(comptes=("$ip", "${seuil}"))])
 
