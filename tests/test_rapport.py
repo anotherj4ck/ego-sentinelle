@@ -1,3 +1,4 @@
+import re
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
@@ -282,13 +283,21 @@ class TestIntegration:
         alertes = detecter(lecture.evenements)
 
         texte = rediger(alertes, lecture.rejets, 5, FENETRE, charger_modeles(EGO))
-        blocs = texte.rstrip("\n").split("\n\n")
+        entete, externes, locales, rejets, conclusion = texte.rstrip("\n").split(
+            "\n\n"
+        )
 
-        assert len(blocs) == 5  # entête, externes, locales, rejets, conclusion
-        assert blocs[1].startswith("203.0.113.66. 6 ")
-        assert "admin, administrateur, invite, root, sauvegarde" in blocs[1]
-        assert blocs[2].startswith("::1. ")
-        assert blocs[3].startswith("1 lignes ")
+        # Structure seulement, jamais la formulation : les répliques d'ego.json
+        # doivent pouvoir être réécrites sans casser ce test.
+        assert "203.0.113.66" in externes
+        assert "::1" not in externes
+        for compte in ("admin", "administrateur", "invite", "root", "sauvegarde"):
+            assert compte in externes
+        assert "::1" in locales
+        assert "203.0.113.66" not in locales
+        assert re.search(r"\b1\b", rejets)  # une ligne rejetée (ligne 16)
+        assert "192.0.2.20" not in texte  # sous le seuil
+        assert all(bloc.strip() for bloc in (entete, conclusion))
 
     def test_compte_hostile_neutralise_de_bout_en_bout(self, ecrire_export):
         lignes = [
