@@ -5,3 +5,6 @@ __pycache__/
 .venv/
 .coverage
 htmlcov/
+# Exports réels (comptes et IP réels) : jamais versionnés, sauf les données de test fictives.
+*.csv
+!tests/donnees/*.csv
