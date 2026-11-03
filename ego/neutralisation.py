@@ -43,4 +43,10 @@ def _neutraliser_caractere(caractere: str) -> str:
     if not _est_dangereux(caractere):
         return caractere
     point = ord(caractere)
-    return f"\\x{point:02x}" if point <= 0xFF else f"\\u{point:04x}"
+    if point <= 0xFF:
+        return f"\\x{point:02x}"
+    if point <= 0xFFFF:
+        return f"\\u{point:04x}"
+    # Hors du plan de base : 8 chiffres, sinon « 1 » se lirait
+    # «  » suivi de « 1 ».
+    return f"\\U{point:08x}"

@@ -67,6 +67,19 @@ class TestCaracteresTrompeurs:
     def test_blancs_et_caracteres_trompeurs_neutralises(self, caractere, attendu):
         assert neutraliser(f"a{caractere}b") == f"a{attendu}b"
 
+    @pytest.mark.parametrize(
+        ("caractere", "attendu"),
+        [
+            ("\U000e0001", "\\U000e0001"),  # étiquette LANGUAGE TAG (Cf)
+            ("\U000e0041", "\\U000e0041"),  # étiquette « A » (Cf)
+            ("\U000f0000", "\\U000f0000"),  # usage privé, plan 15 (Co)
+        ],
+        ids=["tag-langue", "tag-A", "Co-plan-15"],
+    )
+    def test_hors_bmp_sur_huit_chiffres(self, caractere, attendu):
+        # Sur 4 chiffres, « 1 » se lirait «  » suivi de « 1 ».
+        assert neutraliser(f"a{caractere}1") == f"a{attendu}1"
+
     def test_compte_d_apparence_vide_rendu_visible(self):
         assert neutraliser("ㅤㅤ") == "\\u3164\\u3164"
 

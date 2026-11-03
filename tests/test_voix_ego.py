@@ -33,8 +33,9 @@ VARIANTES = [
 # remerciement, et non racines : « Je ne pardonne pas », « sans merci » et
 # « Mercier » passent. Ego ne se dit ni IA, ni machine, ni programme.
 MOTS_INTERDITS = re.compile(
-    r"\b(?:pardon|pardonnez-moi|desolee?s?|je\s+m['’]excuse|excusez-moi"
-    r"|(?<!sans\s)merci|ia|intelligence\s+artificielle|machine\w*|programm\w*"
+    r"\b(?:pardon|pardonnez-moi|desolee?s?|je\s+m['’]excuse|excusez"
+    r"|je\s+vous\s+remercie|(?<!sans\s)merci|ia|intelligence\s+artificielle"
+    r"|machine\w*|programm\w*"
     r"|mon\s+enfant)\b"
 )
 MOTS_MAX_PAR_PHRASE = 10
@@ -98,6 +99,9 @@ class TestRegleMotsInterdits:
             "Je m'excuse.",
             "Je m’excuse.",  # apostrophe typographique
             "Excusez-moi.",
+            "Excusez ce retard.",
+            "Je vous remercie.",
+            "Je  vous   remercie de votre attention.",
             "Merci.",
             "Merci pour votre patience.",
             "L'IA a parlé.",
