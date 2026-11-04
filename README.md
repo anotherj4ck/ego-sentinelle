@@ -1,10 +1,32 @@
 # Ego Sentinelle
 
-Rapport d'Ego sur les échecs d'ouverture de session Windows (événement 4625).
+Ego Sentinelle repère, dans le journal Sécurité de Windows, les adresses IP qui
+accumulent les échecs d'ouverture de session (événement 4625). Il rend son verdict
+dans la voix d'Ego, sans rien bloquer ni modifier.
 
 <!-- Capture d'écran : remplacer la ligne ci-dessous par l'image, par exemple
      ![Rapport d'Ego sur un export fictif](docs/capture.png) -->
 > *Capture d'écran à venir.*
+
+Démonstration **sur une VM de test**, dans une console PowerShell ouverte en
+administrateur, à la racine du dépôt :
+
+```powershell
+# 1. Générer six échecs d'ouverture de session, avec un compte différent à chaque fois
+1..6 | ForEach-Object { net use '\\127.0.0.1\IPC$' /user:"test$_" 'mauvais-mot-de-passe' }
+# 2. Exporter les événements 4625 des dernières 24 heures
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\export-4625.ps1 -Sortie .\echecs.csv
+# 3. Analyser : Ego signale l'adresse de bouclage dans ses alertes locales (code de sortie 1)
+python sentinelle.py .\echecs.csv
+```
+
+Le détail suit : [prérequis](#prérequis), [utilisation](#utilisation),
+[pièges de PowerShell 5.1](#pièges-de-windows-powershell-51),
+[événements de test](#générer-des-événements-4625-de-test-sur-une-vm),
+[répliques](#personnaliser-les-répliques), [tests](#lancer-les-tests),
+[sécurité](#sécurité).
+
+---
 
 ## Ce que fait l'outil
 
@@ -42,7 +64,7 @@ Fin du rapport. Retournez à vos cycles.
 
 ## Pourquoi Ego
 
-<!-- Paragraphe à ajuster : titre du roman, auteur, ton. -->
+<!-- Paragraphe provisoire, à réécrire par l'auteur du projet. -->
 Ego est une voix venue d'un roman : celle qui veille sur Londinium et qui lit tout.
 Il parle par phrases courtes. Il menace sans hausser le ton et ne s'excuse jamais.
 Il regarde les humains comme un matériau. Lire un journal de sécurité ligne à ligne,
@@ -55,7 +77,7 @@ dévoile rien.
 
 - **Windows** (10, 11 ou Server), pour le journal Sécurité et ses événements 4625.
 - **Windows PowerShell 5.1** (fourni avec Windows) ou **PowerShell 7**, pour l'export.
-- **Python 3.11 ou plus**, pour l'analyse.
+- **Python**, pour l'analyse : testé sous Python 3.14 ; syntaxe compatible 3.11.
 - **Aucune dépendance à l'exécution** : `sentinelle.py` n'utilise que la
   bibliothèque standard de Python. `pytest` ne sert qu'à lancer les tests.
 
@@ -266,10 +288,9 @@ runas /user:test7 cmd
 
 Tapez un mauvais mot de passe à l'invite, et recommencez avec `test8`, `test9`…
 
-`runas` produit des échecs locaux. Selon le type d'ouverture de session, Windows
-enregistre une adresse de bouclage, qui compte dans les alertes locales, ou `-`, qui
-fait rejeter la ligne pour « IP absente ». Pour tester la détection d'une adresse
-externe, préférez `net use` depuis une autre machine.
+`runas` produit des échecs locaux : Windows enregistre l'adresse `::1`, et Ego les
+range dans ses alertes locales. Pour tester la détection d'une adresse externe,
+préférez `net use` depuis une autre machine.
 
 ## Personnaliser les répliques
 
