@@ -35,8 +35,8 @@ class TestUnicodeInvisible:
             ("\u200f", "\\u200f"),  # RLM
             ("\u061c", "\\u061c"),  # ALM
             ("\u200b", "\\u200b"),  # espace sans chasse
-            (" ", "\\u2028"),  # séparateur de ligne
-            (" ", "\\u2029"),  # séparateur de paragraphe
+            ("\N{LINE SEPARATOR}", "\\u2028"),  # séparateur de ligne
+            ("\N{PARAGRAPH SEPARATOR}", "\\u2029"),  # séparateur de paragraphe
             ("\ud800", "\\ud800"),  # demi-codet isolé
         ],
         ids=["RLO", "LRE", "PDF", "LRI", "PDI", "RLM", "ALM", "ZWSP", "LS", "PS",

@@ -461,7 +461,14 @@ signale :
 - les caractères de contrôle, sauf le saut de ligne, le retour chariot et la
   tabulation ;
 - les caractères de format invisibles, dont les contrôles bidirectionnels ;
-- les caractères d'usage privé et les demi-codets isolés.
+- les caractères d'usage privé et les demi-codets isolés ;
+- les séparateurs de ligne et de paragraphe (U+2028, U+2029).
+
+Les espaces, y compris insécables, restent permis : le français typographié en
+emploie.
+
+Si git est introuvable, ou si le dossier n'est pas un dépôt git, le test échoue en
+donnant la raison : il ne passe jamais sans avoir vérifié de fichier.
 
 Chaque caractère trouvé est signalé avec sa position : `fichier:ligne:colonne
 U+XXXX`. Les tests qui ont besoin de ces caractères les écrivent en séquence

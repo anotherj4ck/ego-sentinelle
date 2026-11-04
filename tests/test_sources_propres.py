@@ -16,16 +16,16 @@ from ego.neutralisation import CATEGORIES_NEUTRALISEES
 
 RACINE = Path(__file__).parent.parent
 EXTENSIONS = frozenset({".py", ".json", ".md", ".ps1", ".toml", ".cfg"})
-# Les catégories invisibles neutralisées dans le rapport : Cc, Cf, Co, Cs. Les
-# espaces et séparateurs (Zs, Zl, Zp) restent permis : le français typographié
-# emploie des espaces insécables.
-CATEGORIES_INTERDITES = frozenset(c for c in CATEGORIES_NEUTRALISEES if c[0] == "C")
+# Les catégories neutralisées dans le rapport (Cc, Cf, Co, Cs, Zl, Zp), sauf les
+# espaces (Zs) : le français typographié emploie des espaces insécables.
+CATEGORIES_INTERDITES = CATEGORIES_NEUTRALISEES - {"Zs"}
 CONTROLES_PERMIS = frozenset("\n\r\t")
 BOM = "\N{ZERO WIDTH NO-BREAK SPACE}"
 # Windows PowerShell 5.1 lit un script sans BOM dans la page de code ANSI : le
 # BOM est permis, en tête de fichier seulement, pour ces extensions.
 EXTENSIONS_AVEC_BOM = frozenset({".ps1"})
 DOSSIER_DONNEES = "tests/donnees/"
+IMPOSSIBLE_DE_LISTER = "le garde ne peut pas lister les fichiers à vérifier"
 
 # Fichiers de tests/donnees/ qui DOIVENT contenir de vrais caractères piégés,
 # nommés un par un (jamais un dossier ni un motif). Chaque entrée doit exister et
@@ -38,14 +38,24 @@ def fichiers_surveilles(racine: Path) -> list[str]:
     """Fichiers suivis par git, ou nouveaux et non ignorés, aux extensions voulues.
 
     --others : un fichier pas encore commité est vérifié avant son premier commit.
+    Sans git, ou hors d'un dépôt, lève AssertionError avec la raison : le garde
+    échoue au lieu de passer sans rien vérifier.
     """
-    sortie = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=racine,
-        capture_output=True,
-        check=True,
-    ).stdout.decode("utf-8")
-    noms = {nom for nom in sortie.split("\0") if nom}
+    commande = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+    try:
+        resultat = subprocess.run(commande, cwd=racine, capture_output=True)
+    except OSError as erreur:
+        raise AssertionError(
+            f"git introuvable ({erreur}) : {IMPOSSIBLE_DE_LISTER}."
+            " Installez git ou ajoutez-le au PATH."
+        ) from None
+    if resultat.returncode != 0:
+        raison = resultat.stderr.decode("utf-8", "replace").strip()
+        raise AssertionError(
+            f"git ls-files a échoué (code {resultat.returncode}) : "
+            f"{IMPOSSIBLE_DE_LISTER}. {raison}"
+        )
+    noms = {nom for nom in resultat.stdout.decode("utf-8").split("\0") if nom}
     return sorted(nom for nom in noms if Path(nom).suffix in EXTENSIONS)
 
 
@@ -110,6 +120,16 @@ def entrees_douteuses(racine: Path, liste_blanche: frozenset[str]) -> list[str]:
 RLO = "\N{RIGHT-TO-LEFT OVERRIDE}"
 
 
+def echec_du_listage(racine: Path) -> str:
+    """Message d'échec de fichiers_surveilles ; sinon, échec par assertion."""
+    try:
+        noms = fichiers_surveilles(racine)
+    except Exception as erreur:  # noqa: BLE001 - le type est vérifié juste après
+        assert isinstance(erreur, AssertionError), f"{type(erreur).__name__}: {erreur}"
+        return str(erreur)
+    raise AssertionError(f"aucun échec : {len(noms)} fichier(s) listé(s) sans git")
+
+
 class TestRegle:
     def test_bidi_detecte_avec_ligne_et_colonne(self):
         assert caracteres_interdits(f"ab\ncd{RLO}ef") == ["2:3 U+202E"]
@@ -136,6 +156,8 @@ class TestRegle:
             ("\x0c", "U+000C"),  # Cc : saut de page
             (chr(0xE000), "U+E000"),  # Co : usage privé
             (chr(0xD800), "U+D800"),  # Cs : demi-codet
+            ("\N{LINE SEPARATOR}", "U+2028"),  # Zl
+            ("\N{PARAGRAPH SEPARATOR}", "U+2029"),  # Zp
         ],
     )
     def test_categories_interdites(self, caractere, point):
@@ -155,10 +177,11 @@ class TestRegle:
         assert caracteres_interdits(texte) == []
 
     def test_lignes_comptees_sur_lf_seulement(self):
-        # splitlines() couperait aussi sur U+2028 et décalerait les lignes.
+        # U+2028 est signalé mais ne coupe pas la ligne : splitlines() couperait
+        # aussi sur lui (et sur U+001C) et décalerait les lignes suivantes.
         texte = f"a\N{LINE SEPARATOR}b\x1c\nc{RLO}"
 
-        assert caracteres_interdits(texte) == ["1:4 U+001C", "2:2 U+202E"]
+        assert caracteres_interdits(texte) == ["1:2 U+2028", "1:4 U+001C", "2:2 U+202E"]
 
     def test_colonne_apres_crlf(self):
         assert caracteres_interdits(f"a\r\nb{RLO}") == ["2:2 U+202E"]
@@ -255,6 +278,35 @@ class TestListeBlanche:
 
     def test_liste_blanche_du_depot(self):
         assert entrees_douteuses(RACINE, LISTE_BLANCHE) == []
+
+
+class TestGitIndisponible:
+    # Sans liste de fichiers, le garde ne vérifierait rien : il doit échouer en le
+    # disant, jamais passer en silence ni être ignoré.
+
+    def test_git_hors_du_path(self, monkeypatch, tmp_path):
+        # PATH remplacé pour ce seul test : la machine n'est pas modifiée.
+        monkeypatch.setenv("PATH", str(tmp_path))
+
+        message = echec_du_listage(RACINE)
+
+        assert message.startswith("git introuvable")
+        assert "le garde ne peut pas lister les fichiers à vérifier" in message
+
+    def test_dossier_hors_depot_git(self, monkeypatch, tmp_path):
+        # Empêche git de remonter jusqu'à un éventuel dépôt parent de tmp_path.
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+
+        # La raison donnée par git, dans sa langue, doit figurer dans le message.
+        raison = subprocess.run(
+            ["git", "ls-files"], cwd=tmp_path, capture_output=True
+        ).stderr.decode("utf-8", "replace").strip()
+
+        message = echec_du_listage(tmp_path)
+
+        assert message.startswith("git ls-files a échoué (code 128) : ")
+        assert "le garde ne peut pas lister les fichiers à vérifier" in message
+        assert raison and raison in message
 
 
 class TestDepot:
