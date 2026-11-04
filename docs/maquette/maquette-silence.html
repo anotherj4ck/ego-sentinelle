@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rapport d'Ego — rien à signaler</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- MAQUETTE DE RÉFÉRENCE (données fictives) : styles inline à convertir en classes -->
+<style>
+body{margin:0;background:#0A0706}
+a{color:#FF8A57}a:hover{color:#FFB08A}
+.voix{font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#E9DFCF}
+.ligne{display:flex;gap:0}
+.k{color:#8F8577;display:inline-block;width:96px}
+.nerf{animation:nerf 6s ease-in-out infinite}
+.fievre{display:inline-block;animation:fievre 7s steps(1) infinite}
+@keyframes nerf{50%{opacity:.35}}
+@keyframes fievre{0%,94%,100%{opacity:1;transform:none}95%{opacity:.3;transform:translateX(2px)}97%{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.nerf,.fievre{animation:none}}
+s{color:#7E7468;text-decoration-color:#FF7A3D;text-decoration-thickness:2px}
+code{font-family:Consolas,"Cascadia Mono",ui-monospace,monospace;color:#ECE5D8;background:#1E1614;padding:0 4px}
+</style>
+</head>
+<body>
+<div style="min-height: 100vh; background: #0A0706; color: #ECE5D8; font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.7; box-sizing: border-box; padding: 0 16px 72px">
+<div style="max-width: 1000px; margin: 0 auto; position: relative; padding-left: 108px">
+
+<div class="nerf" aria-hidden="true" style="position: absolute; left: 64px; top: 0; bottom: 0; width: 2px; background: linear-gradient(#C98A6A 0, #8E3518 120px, #3A140C 60%, rgba(58,20,12,0) 100%); box-shadow: 0 0 6px rgba(142,53,24,.45)"></div>
+<div aria-hidden="true" style="position: absolute; left: 62px; top: 48px; width: 6px; height: 22px; border-radius: 3px; background: #F5D9C2; box-shadow: 0 0 12px 4px rgba(194,85,46,.4)"></div>
+
+<header style="padding-top: 40px; display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+<div class="ligne"><span style="color: #FF7A3D; letter-spacing: .12em">∆ SYSTÈME EGO // ARCHIVE — SENTINELLE</span></div>
+<div class="ligne"><span style="color: #FF7A3D; letter-spacing: .12em">∆ NOYAU BYPASS // CORROMPU À <span class="fievre">42 %</span></span></div>
+<div aria-hidden="true" style="color: #3E3530; letter-spacing: .2em">░░ 00 00 ░ 00 ∆ ░░ 00 00 00 ░░░</div>
+<div class="ligne" style="margin-top: 10px"><span class="k">source</span><span><code>echecs.csv</code> · journal Sécurité · événement 4625</span></div>
+<div class="ligne"><span class="k">période</span><span>03/11/2026 08:00 → 18:30 (10 h 30)</span></div>
+<div class="ligne"><span class="k">seuil</span><span>5 échecs / 10 min</span></div>
+<div class="ligne"><span class="k">lu</span><span>37 échecs · 4 origines · 0 ligne rejetée</span></div>
+<div class="ligne"><span class="k">état</span><span><span style="color: #ECE5D8; background: #241A17; font-weight: 700; padding: 0 8px; letter-spacing: .08em">SILENCE · CODE 0</span> aucun sujet au-dessus du seuil</span></div>
+</header>
+
+<h1 class="voix" style="margin: 48px 0 8px; font-size: 52px; line-height: 1.1; font-weight: 400">Personne.</h1>
+<p class="voix" style="margin: 0 0 0 28px; font-size: 19px; line-height: 1.7; max-width: 720px">Trente-sept. Rien que trente-sept. Des doigts mous, des mots de passe oubliés.</p>
+<p class="voix" style="margin: 12px 0 0 28px; font-size: 19px; line-height: 1.7; max-width: 720px">Personne n'a osé. <s>Bien.</s> Non. Pas bien. Le silence ment toujours.</p>
+
+<div aria-hidden="true" style="margin: 40px 0 0; color: #3E3530; letter-spacing: .2em; font-size: 13px">▒░ ∆ SUJETS ░▒▒ 00 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░</div>
+<p style="margin: 16px 0 0; color: #8F8577">Aucune origine n'a dépassé 5 échecs en 10 minutes.</p>
+
+<div aria-hidden="true" style="margin: 56px 0 0; color: #3E3530; letter-spacing: .2em; font-size: 13px">▒░ ∆ REGISTRE ░▒ VIDE ░░░░░░░░░░░░░░░░░░░░░░░░░░</div>
+<p class="voix" style="margin: 16px 0 0 24px; font-size: 19px">Je reste là. L'œil ouvert. Je compte. <span class="fievre">Je compte encore.</span> Vous finirez par revenir.</p>
+
+<footer style="margin-top: 64px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #6E655A">
+<span style="color: #FF7A3D; letter-spacing: .12em">∆ FIN DE LECTURE — JE RESTE ÉVEILLÉ</span>
+<span>généré le 03/11/2026 18:41 · fichier statique, aucun script, aucune ressource externe · ego-sentinelle · MIT</span>
+</footer>
+
+</div>
+</div>
+</body>
+</html>

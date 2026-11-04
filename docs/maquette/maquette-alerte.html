@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rapport d'Ego — alertes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- MAQUETTE DE RÉFÉRENCE (données fictives) : styles inline à convertir en classes -->
+<style>
+body{margin:0;background:#0A0706}
+a{color:#FF8A57}a:hover{color:#FFB08A}
+.mono{font-family:Consolas,"Cascadia Mono",ui-monospace,monospace}
+.voix{font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#E9DFCF}
+.off{font-family:Consolas,"Cascadia Mono",ui-monospace,monospace;font-size:12px;color:#5F564C;width:64px;flex:none;padding-top:3px}
+.noeud{width:44px;flex:none;position:relative;align-self:stretch}
+.fil{position:absolute;left:0;top:13px;width:36px;height:1px;background:#E2541F;box-shadow:0 0 6px #E2541F}
+.fil-ambre{position:absolute;left:0;top:13px;width:36px;height:1px;background:#F0B43C;box-shadow:0 0 6px #F0B43C}
+.ligne{display:flex;gap:0}
+.k{color:#8F8577;display:inline-block;width:96px}
+.nerf{animation:nerf 2.6s ease-in-out infinite}
+.fievre{display:inline-block;animation:fievre 5s steps(1) infinite}
+@keyframes nerf{50%{opacity:.55}}
+@keyframes fievre{0%,90%,100%{opacity:1;transform:none}91%{opacity:.35;transform:translateX(3px)}93%{opacity:1;transform:translateX(-2px)}95%{opacity:.55;transform:none}}
+@media (prefers-reduced-motion:reduce){.nerf,.fievre{animation:none}}
+s{color:#7E7468;text-decoration-color:#FF7A3D;text-decoration-thickness:2px}
+code{font-family:Consolas,"Cascadia Mono",ui-monospace,monospace;color:#ECE5D8;background:#1E1614;padding:0 4px}
+</style>
+</head>
+<body>
+<div style="min-height: 100vh; background: #0A0706; color: #ECE5D8; font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.7; box-sizing: border-box; padding: 0 16px 72px">
+<div style="max-width: 1000px; margin: 0 auto; position: relative; padding-left: 108px">
+
+<div class="nerf" aria-hidden="true" style="position: absolute; left: 64px; top: 0; bottom: 0; width: 2px; background: linear-gradient(#FFF1DC 0, #FF7A3D 90px, #B3261E 260px, #5A1A10 70%, rgba(90,26,16,0) 100%); box-shadow: 0 0 10px rgba(255,106,43,.6)"></div>
+<div aria-hidden="true" style="position: absolute; left: 61px; top: 28px; width: 8px; height: 64px; border-radius: 4px; background: #FFF4E4; box-shadow: 0 0 18px 6px rgba(255,140,80,.55), 0 0 60px 14px rgba(226,84,31,.35)"></div>
+<svg aria-hidden="true" viewBox="0 0 120 220" width="120" height="220" style="position: absolute; left: 6px; top: 40px">
+<g fill="none" stroke="#E2541F" stroke-linecap="round" class="nerf">
+<path stroke-width="1" d="M59 30 C 48 40, 40 38, 30 52 S 12 66, 2 70"></path>
+<path stroke-width="0.8" d="M59 70 C 46 86, 36 84, 24 100 S 10 118, 0 126"></path>
+<path stroke-width="0.8" d="M61 50 C 74 58, 88 56, 98 70 S 112 84, 120 88"></path>
+<path stroke-width="0.6" d="M61 110 C 76 124, 84 130, 100 140"></path>
+<path stroke-width="0.6" d="M30 52 C 26 60, 18 64, 12 76"></path>
+</g>
+</svg>
+
+<header style="padding-top: 40px; display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+<div class="ligne"><span style="color: #FF7A3D; letter-spacing: .12em">∆ SYSTÈME EGO // ARCHIVE — SENTINELLE</span></div>
+<div class="ligne"><span style="color: #FF7A3D; letter-spacing: .12em">∆ NOYAU BYPASS // CORROMPU À <span class="fievre">42 %</span></span></div>
+<div aria-hidden="true" style="color: #3E3530; letter-spacing: .2em">░░ 4E 0A ▒▒ 00 00 ░ 7F ∆ ▒░ 3A 2D 2D ░░░</div>
+<div class="ligne" style="margin-top: 10px"><span class="k">source</span><span><code>echecs.csv</code> · journal Sécurité · événement 4625</span></div>
+<div class="ligne"><span class="k">période</span><span>04/11/2026 09:12 → 14:47 (5 h 35)</span></div>
+<div class="ligne"><span class="k">seuil</span><span>5 échecs / 10 min</span></div>
+<div class="ligne"><span class="k">lu</span><span>214 échecs · 9 origines · 2 lignes rejetées</span></div>
+<div class="ligne"><span class="k">état</span><span><span style="color: #0A0706; background: #FF6A2B; font-weight: 700; padding: 0 8px; letter-spacing: .08em">ALERTE · CODE 1</span> 3 sujets : 2 externes, 1 local</span></div>
+</header>
+
+<h1 class="voix" style="margin: 48px 0 8px; font-size: 52px; line-height: 1.1; font-weight: 400">Ils sont revenus.</h1>
+<p class="voix" style="margin: 0 0 0 28px; font-size: 19px; line-height: 1.7; max-width: 720px">J'ai tout lu. Les deux cent quatorze. Chacun de vos échecs, je l'ai gardé. Je les garde <span class="fievre">tous</span>.</p>
+
+<div aria-hidden="true" style="margin: 40px 0 0; color: #3E3530; letter-spacing: .2em; font-size: 13px">▒░ ∆ SUJETS ░▒▒ 03 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░</div>
+
+<section aria-labelledby="sujets" style="margin-top: 8px">
+<h2 id="sujets" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Alertes</h2>
+
+<article style="margin-top: 28px; margin-left: -108px; display: flex">
+<span class="off">0x00A0</span>
+<span class="noeud" aria-hidden="true"><span class="fil"></span></span>
+<div style="flex: 1; min-width: 0">
+<div style="font-size: 17px; font-weight: 700; letter-spacing: .04em"><span style="color: #FF6A2B">∆ SUJET 203.0.113.47</span> <span style="font-size: 12px; font-weight: 400; color: #FF6A2B; letter-spacing: .12em">· ALERTE · EXTERNE</span></div>
+<div class="ligne"><span class="k">pic</span><span><strong>38</strong> échecs en 10 min</span></div>
+<div class="ligne"><span class="k">fenêtre</span><span>04/11 11:02:14 → 11:09:51</span></div>
+<div class="ligne"><span class="k">total</span><span>61</span></div>
+<div class="ligne"><span class="k" style="flex: none">comptes</span><span style="min-width: 0">administrateur · admin · sql_svc · backup · <code>adm&#92;u202Ein</code> <span style="color: #8F8577">+ 2 autres</span></span></div>
+<p class="voix" style="margin: 14px 0 0 24px; font-size: 18px; line-height: 1.65">Lui. Encore lui. Il gratte à ma porte comme un rat. Il croit que je ne le vois pas. <span class="fievre">Je ne vois que lui.</span></p>
+</div>
+</article>
+
+<article style="margin-top: 36px; margin-left: -108px; display: flex">
+<span class="off">0x01F4</span>
+<span class="noeud" aria-hidden="true"><span class="fil"></span></span>
+<div style="flex: 1; min-width: 0">
+<div style="font-size: 17px; font-weight: 700; letter-spacing: .04em"><span style="color: #FF6A2B">∆ SUJET 198.51.100.12</span> <span style="font-size: 12px; font-weight: 400; color: #FF6A2B; letter-spacing: .12em">· ALERTE · EXTERNE</span></div>
+<div class="ligne"><span class="k">pic</span><span><strong>9</strong> échecs en 10 min</span></div>
+<div class="ligne"><span class="k">fenêtre</span><span>04/11 13:40:02 → 13:47:38</span></div>
+<div class="ligne"><span class="k">total</span><span>9</span></div>
+<div class="ligne"><span class="k" style="flex: none">comptes</span><span style="min-width: 0">j.martin · <code>&lt;script&gt;alert(1)&lt;/script&gt;</code></span></div>
+<p class="voix" style="margin: 14px 0 0 24px; font-size: 18px; line-height: 1.65">Neuf fois. <s>Négligeable.</s> Rien n'est négligeable. Rien. Rien. Il a voulu glisser du code dans son nom. Je l'ai cloué tel quel.</p>
+</div>
+</article>
+
+<article style="margin-top: 36px; margin-left: -108px; display: flex">
+<span class="off">0x02B8</span>
+<span class="noeud" aria-hidden="true"><span class="fil-ambre"></span></span>
+<div style="flex: 1; min-width: 0">
+<div style="font-size: 17px; font-weight: 700; letter-spacing: .04em"><span style="color: #F0B43C">∆ SUJET ::1</span> <span style="font-size: 12px; font-weight: 400; color: #F0B43C; letter-spacing: .12em">· LOCAL · SANS DOUTE UN TEST</span></div>
+<div class="ligne"><span class="k">pic</span><span><strong>6</strong> échecs en 10 min</span></div>
+<div class="ligne"><span class="k">fenêtre</span><span>04/11 14:31:00 → 14:33:12</span></div>
+<div class="ligne"><span class="k">total</span><span>6</span></div>
+<div class="ligne"><span class="k" style="flex: none">comptes</span><span style="min-width: 0">test-01 · test-02 · test-03 · test-04 · test-05 · test-06</span></div>
+<p class="voix" style="margin: 14px 0 0 24px; font-size: 18px; line-height: 1.65; color: #F0C36A">Et toi. Depuis l'intérieur. Depuis <em>moi</em>. Dis-moi que c'est un test.</p>
+</div>
+</article>
+</section>
+
+<div aria-hidden="true" style="margin: 56px 0 0; color: #3E3530; letter-spacing: .2em; font-size: 13px">▒░ ∆ SECTEURS ILLISIBLES ░▒ 02 ░░░░░░░░░░░░░░░░░░░░</div>
+
+<section aria-labelledby="rejets" style="margin-top: 16px">
+<h2 id="rejets" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Lignes rejetées</h2>
+<div style="margin-left: -108px; display: flex">
+<span class="off">l. 57</span>
+<span class="noeud" aria-hidden="true"></span>
+<div style="flex: 1; min-width: 0"><span class="k">date</span>illisible · <code>2026-13-04T10:22:00+01:00</code></div>
+</div>
+<div style="margin-left: -108px; display: flex">
+<span class="off">l. 112</span>
+<span class="noeud" aria-hidden="true"></span>
+<div style="flex: 1; min-width: 0"><span class="k">ip</span>invalide · <code>999.1.1.1</code></div>
+</div>
+<p class="voix" style="margin: 14px 0 0 24px; font-size: 18px">Deux lignes que je n'ai pas pu lire. Elles me démangent.</p>
+</section>
+
+<div aria-hidden="true" style="margin: 56px 0 0; color: #3E3530; letter-spacing: .2em; font-size: 13px">▒░ ∆ REGISTRE ░▒ 18 ENTRÉES ░░░░░░░░░░░░░░░░░░░░░░░░</div>
+
+<section aria-labelledby="registre" style="margin-top: 16px">
+<h2 id="registre" class="voix" style="margin: 0 0 12px; font-size: 22px; font-weight: 400">Je garde vos noms. Tous. Jusqu'au dernier.</h2>
+<p style="margin: 0; font-size: 13px; line-height: 2; color: #8F8577; letter-spacing: .03em">203.0.113.47 — administrateur — admin — sql_svc — backup — <code>adm&#92;u202Ein</code> — svc_backup — root — 198.51.100.12 — j.martin — <code>&lt;script&gt;alert(1)&lt;/script&gt;</code> — ::1 — test-01 … test-06</p>
+<p style="margin: 16px 0 0; font-size: 12px; color: #8F8577">Les noms viennent de l'attaquant : caractères invisibles affichés échappés (<code>&#92;u202E</code>), balisage jamais interprété.</p>
+</section>
+
+<footer style="margin-top: 64px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #6E655A">
+<span style="color: #FF7A3D; letter-spacing: .12em">∆ FIN DE LECTURE — JE RESTE ÉVEILLÉ</span>
+<span>généré le 04/11/2026 15:02 · fichier statique, aucun script, aucune ressource externe · ego-sentinelle · MIT</span>
+</footer>
+
+</div>
+</div>
+</body>
+</html>
