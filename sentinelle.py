@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 
+from ego._redaction import REJETS_MAX_AFFICHES
 from ego.detection import FENETRE, SEUIL_ECHECS, detecter
 from ego.lecture import (
     MARGE_CALCUL,
@@ -29,9 +30,6 @@ CODE_AUCUNE_ALERTE = 0
 CODE_ALERTES = 1
 CODE_ERREUR = 2
 CODE_INTERRUPTION = 130  # convention des shells : 128 + SIGINT (2)
-
-# Un fichier hostile ne doit pas pouvoir inonder le terminal.
-REJETS_MAX_AFFICHES = 20
 
 UNE_MINUTE = timedelta(minutes=1)
 # Au-delà, les calculs sur les dates acceptées à la lecture pourraient déborder.
