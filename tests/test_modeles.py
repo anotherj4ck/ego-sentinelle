@@ -128,6 +128,14 @@ class TestVariantes:
 
         assert "alerte, variante 2 : modèle invalide" in message
 
+    def test_demi_codet_isole_refuse(self, ecrire_modeles):
+        # JSON accepte "\ud800", mais aucun encodage de sortie ne l'écrirait.
+        texte = json.dumps(avec(conclusion=["Fin.", "Fin \ud800."]))
+
+        message = refus(ecrire_modeles(texte))
+
+        assert "conclusion, variante 2 : demi-codet isolé \\ud800" in message
+
     def test_dollar_double_accepte(self, ecrire_modeles):
         modeles = charger_modeles(ecrire_modeles(avec(conclusion=["Coût : 5 $$."])))
 

@@ -2,6 +2,8 @@
 
 import argparse
 import io
+import os
+import re
 import sys
 from collections.abc import Sequence
 from datetime import timedelta
@@ -26,6 +28,7 @@ MODELES_PAR_DEFAUT = Path(__file__).resolve().parent / "modeles" / "ego.json"
 CODE_AUCUNE_ALERTE = 0
 CODE_ALERTES = 1
 CODE_ERREUR = 2
+CODE_INTERRUPTION = 130  # convention des shells : 128 + SIGINT (2)
 
 # Un fichier hostile ne doit pas pouvoir inonder le terminal.
 REJETS_MAX_AFFICHES = 20
@@ -34,29 +37,41 @@ UNE_MINUTE = timedelta(minutes=1)
 # Au-delà, les calculs sur les dates acceptées à la lecture pourraient déborder.
 FENETRE_MAX_MINUTES = MARGE_CALCUL // UNE_MINUTE
 
+# Options numériques : chiffres ASCII seulement. int() accepterait « +5 »,
+# « 1_000 », « ٥ » ou des milliers de chiffres.
+CHIFFRES_MAX = 9
+ENTIER_OPTION = re.compile(rf"[0-9]{{1,{CHIFFRES_MAX}}}")
+# Une valeur refusée est recopiée dans le message, mais pas au-delà.
+ECHO_MAX = 20
+
 
 class _Echec(Exception):
     """Erreur signalée à l'utilisateur par un message, jamais par un traceback."""
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Point d'entrée. Codes : 0 aucune alerte, 1 alertes, 2 erreur."""
+    """Point d'entrée. Codes : 0 aucune alerte, 1 alertes, 2 erreur, 130 Ctrl+C."""
     _sorties_en_utf8()
-    arguments = _analyseur().parse_args(argv)
     try:
-        return _executer(arguments)
+        return _executer(_analyseur().parse_args(argv))
     except _Echec as echec:
         print(f"sentinelle.py : erreur : {echec}", file=sys.stderr)
         return CODE_ERREUR
+    except KeyboardInterrupt:
+        # Interruption voulue par l'opérateur : ni message ni traceback.
+        return CODE_INTERRUPTION
 
 
 def _sorties_en_utf8() -> None:
     # Vers un pipe ou une redirection, Python encode par défaut selon la
     # page de code Windows (cp1252) : « é » deviendrait 0xE9 et « ā » lèverait
     # UnicodeEncodeError. Le rapport et les messages sortent toujours en UTF-8.
-    for flux in (sys.stdout, sys.stderr):
+    # errors est explicite : reconfigure(encoding=…) le remettrait à « strict ».
+    # stdout reste strict, le rapport étant vérifié avant écriture (_encoder) ;
+    # stderr échappe ce qu'argparse recopie de la ligne de commande (demi-codet).
+    for flux, erreurs in ((sys.stdout, "strict"), (sys.stderr, "backslashreplace")):
         if isinstance(flux, io.TextIOWrapper):
-            flux.reconfigure(encoding="utf-8")
+            flux.reconfigure(encoding="utf-8", errors=erreurs)
 
 
 def _executer(arguments: argparse.Namespace) -> int:
@@ -64,14 +79,14 @@ def _executer(arguments: argparse.Namespace) -> int:
     fenetre = arguments.fenetre * UNE_MINUTE
     lecture = _lire_export(arguments.export)
     modeles = _charger_modeles(arguments.modeles)
+    if arguments.sortie is not None:
+        _proteger(arguments.sortie, arguments.export, arguments.modeles)
     try:
         alertes = detecter(lecture.evenements, seuil, fenetre)
     except ValueError as erreur:
         raise _Echec(f"paramètres invalides : {erreur}") from erreur
     rapport = rediger(alertes, lecture.rejets, seuil, fenetre, modeles)
-    _publier(rapport, arguments.sortie)
-    for ligne in _lignes_de_rejets(lecture.rejets):
-        print(ligne, file=sys.stderr)
+    _publier(rapport, lecture.rejets, arguments.sortie)
     return CODE_ALERTES if alertes else CODE_AUCUNE_ALERTE
 
 
@@ -79,32 +94,115 @@ def _lire_export(chemin: Path) -> ResultatLecture:
     try:
         return lire_export(chemin)
     except FileNotFoundError as erreur:
-        raise _Echec(f"export introuvable : {chemin}") from erreur
+        raise _Echec(f"export introuvable : {_affichable(chemin)}") from erreur
     except OSError as erreur:
-        raise _Echec(f"export illisible : {chemin} ({erreur.strerror})") from erreur
+        raise _Echec(
+            f"export illisible : {_affichable(chemin)} ({erreur.strerror})"
+        ) from erreur
     except ErreurFormat as erreur:
-        raise _Echec(f"export invalide : {chemin} : {erreur}") from erreur
+        raise _Echec(f"export invalide : {_affichable(chemin)} : {erreur}") from erreur
 
 
 def _charger_modeles(chemin: Path) -> Modeles:
     try:
         return charger_modeles(chemin)
     except FileNotFoundError as erreur:
-        raise _Echec(f"modèles introuvables : {chemin}") from erreur
+        raise _Echec(f"modèles introuvables : {_affichable(chemin)}") from erreur
     except OSError as erreur:
-        raise _Echec(f"modèles illisibles : {chemin} ({erreur.strerror})") from erreur
+        raise _Echec(
+            f"modèles illisibles : {_affichable(chemin)} ({erreur.strerror})"
+        ) from erreur
     except ErreurModeles as erreur:
-        raise _Echec(f"modèles invalides : {chemin} : {erreur}") from erreur
+        raise _Echec(
+            f"modèles invalides : {_affichable(chemin)} : {erreur}"
+        ) from erreur
 
 
-def _publier(rapport: str, sortie: Path | None) -> None:
+def _affichable(chemin: Path) -> str:
+    # Un nom de fichier peut venir d'un dossier déposé par un tiers (glob *.csv) :
+    # il est neutralisé comme toute donnée non fiable. as_posix : sous Windows,
+    # des « / » plutôt que des « \ », que neutraliser doublerait.
+    return neutraliser(chemin.as_posix())
+
+
+def _proteger(sortie: Path, export: Path, modeles: Path) -> None:
+    """Refuse une sortie qui écraserait l'export ou les répliques écrites à la main."""
+    for chemin, nom in ((export, "l'export"), (modeles, "le fichier de modèles")):
+        if _meme_fichier(sortie, chemin):
+            raise _Echec(f"--sortie écraserait {nom} : {_affichable(sortie)}")
+
+
+def _meme_fichier(un: Path, autre: Path) -> bool:
+    # samefile compare les fichiers eux-mêmes, quelle que soit la graphie
+    # (« .. », casse sous Windows, lien). Une sortie absente lève OSError :
+    # elle ne peut pas être `autre`, qui vient d'être lu.
+    try:
+        return un.samefile(autre)
+    except OSError:
+        return False
+
+
+def _publier(rapport: str, rejets: Sequence[LigneRejetee], sortie: Path | None) -> None:
+    contenu = _encoder(rapport)
+    if sortie is not None:
+        _ecrire_fichier(sortie, contenu)
+    # Rejets avant le rapport sur stdout : si personne ne lit stdout (pipe
+    # fermé), ils restent visibles.
+    for ligne in _lignes_de_rejets(rejets):
+        print(ligne, file=sys.stderr)
     if sortie is None:
+        _ecrire_sur_stdout(rapport)
+
+
+def _encoder(rapport: str) -> bytes:
+    # Avant toute écriture : en cas d'échec, rien n'est écrit nulle part.
+    try:
+        return rapport.encode("utf-8")
+    except UnicodeEncodeError as erreur:
+        fautif = neutraliser(erreur.object[erreur.start])
+        raise _Echec(
+            f"rapport impossible à écrire en UTF-8 (demi-codet isolé {fautif})"
+        ) from erreur
+
+
+def _ecrire_fichier(sortie: Path, contenu: bytes) -> None:
+    try:
+        sortie.write_bytes(contenu)
+    except OSError as erreur:
+        raise _Echec(
+            f"écriture impossible : {_affichable(sortie)} ({erreur.strerror})"
+        ) from erreur
+
+
+def _ecrire_sur_stdout(rapport: str) -> None:
+    if sys.stdout is None:  # descripteur 1 fermé dès le lancement
+        raise _Echec("écriture impossible sur la sortie standard (fermée)")
+    try:
         print(rapport, end="")
+        sys.stdout.flush()
+    except OSError as erreur:
+        _abandonner_stdout()
+        raise _Echec(
+            f"écriture impossible sur la sortie standard ({erreur.strerror})"
+        ) from erreur
+
+
+def _abandonner_stdout() -> None:
+    # Le tampon de stdout garde le rapport non écrit : en quittant, Python le
+    # revide, échoue de nouveau et sort avec le code 120. Rediriger le
+    # descripteur vers le périphérique nul rend ce dernier vidage inoffensif.
+    # Nettoyage au mieux : l'erreur d'origine est déjà signalée par l'appelant.
+    try:
+        descripteur = sys.stdout.fileno()
+        nul = os.open(os.devnull, os.O_WRONLY)
+    except (OSError, ValueError):  # flux sans descripteur (remplacé, tests)
         return
     try:
-        sortie.write_bytes(rapport.encode("utf-8"))
-    except OSError as erreur:
-        raise _Echec(f"écriture impossible : {sortie} ({erreur.strerror})") from erreur
+        os.dup2(nul, descripteur)
+    except OSError:
+        pass  # descripteur inutilisable : le vidage final échouera, sans plus
+    finally:
+        os.close(nul)
 
 
 def _lignes_de_rejets(rejets: Sequence[LigneRejetee]) -> list[str]:
@@ -161,10 +259,12 @@ def _analyseur() -> argparse.ArgumentParser:
 
 
 def _entier(texte: str) -> int:
-    try:
-        return int(texte)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"entier attendu, reçu {texte!r}") from None
+    if not ENTIER_OPTION.fullmatch(texte):
+        apercu = texte if len(texte) <= ECHO_MAX else texte[:ECHO_MAX] + "…"
+        raise argparse.ArgumentTypeError(
+            f"entier attendu (chiffres 0-9, {CHIFFRES_MAX} au plus), reçu {apercu!r}"
+        )
+    return int(texte)
 
 
 def _seuil(texte: str) -> int:

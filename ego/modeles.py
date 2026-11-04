@@ -25,6 +25,9 @@ CHAMPS_PAR_CLE: Mapping[str, frozenset[str]] = MappingProxyType(
 )
 CLES = tuple(CHAMPS_PAR_CLE)
 
+DEBUT_DEMI_CODETS = 0xD800
+FIN_DEMI_CODETS = 0xDFFF
+
 
 class ErreurModeles(ValueError):
     """Fichier de modèles inutilisable."""
@@ -83,6 +86,7 @@ def _valider_variantes(cle: str, variantes: tuple[str, ...]) -> None:
     for rang, variante in enumerate(variantes, start=1):
         if not isinstance(variante, str) or not variante.strip():
             raise ErreurModeles(f"{cle}, variante {rang} : texte non vide attendu")
+        _refuser_demi_codet(cle, rang, variante)
         modele = Template(variante)
         if not modele.is_valid():
             raise ErreurModeles(
@@ -95,6 +99,16 @@ def _valider_variantes(cle: str, variantes: tuple[str, ...]) -> None:
                 f"{cle}, variante {rang} : champ(s) non autorisé(s) : "
                 f"{_dollars(interdits)} (autorisés : "
                 f"{_dollars(sorted(CHAMPS_PAR_CLE[cle]))})"
+            )
+
+
+def _refuser_demi_codet(cle: str, rang: int, variante: str) -> None:
+    # JSON accepte "\ud800", mais le rapport ne pourrait pas être écrit en UTF-8.
+    for caractere in variante:
+        if DEBUT_DEMI_CODETS <= ord(caractere) <= FIN_DEMI_CODETS:
+            raise ErreurModeles(
+                f"{cle}, variante {rang} : demi-codet isolé \\u{ord(caractere):04x}"
+                " (caractère invalide en UTF-8)"
             )
 
 

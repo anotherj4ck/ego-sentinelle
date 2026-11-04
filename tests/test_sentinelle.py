@@ -4,6 +4,7 @@ Les rapports attendus sont calculés avec la bibliothèque elle-même : aucun te
 ne dépend de la formulation des répliques d'ego.json.
 """
 
+import errno
 import io
 import os
 import subprocess
@@ -24,18 +25,23 @@ EGO = RACINE / "modeles" / "ego.json"
 FENETRE = timedelta(minutes=10)
 
 
-def lancer(capsys, *arguments: object) -> tuple[int | str, str, str]:
-    """Code de sortie, stdout et stderr d'un appel à main().
+def appeler(*arguments: object) -> int | str:
+    """Code de sortie d'un appel à main().
 
     Une exception non rattrapée (un traceback pour l'utilisateur) devient un
     code « exception … » : les tests échouent alors par assertion.
     """
     try:
-        code = sentinelle.main([str(a) for a in arguments])
+        return sentinelle.main([str(a) for a in arguments])
     except SystemExit as fin:  # argparse
-        code = fin.code
-    except Exception as erreur:  # noqa: BLE001 - signalée par le code renvoyé
-        code = f"exception {type(erreur).__name__}: {erreur}"
+        return fin.code
+    except (Exception, KeyboardInterrupt) as erreur:  # noqa: BLE001 - voir ci-dessus
+        return f"exception {type(erreur).__name__}: {erreur}"
+
+
+def lancer(capsys, *arguments: object) -> tuple[int | str, str, str]:
+    """Code de sortie, stdout et stderr d'un appel à main()."""
+    code = appeler(*arguments)
     sortie = capsys.readouterr()
     return code, sortie.out, sortie.err
 
@@ -48,6 +54,12 @@ def rapport_attendu(
     return rediger(alertes, lecture.rejets, seuil, fenetre, charger_modeles(modeles))
 
 
+def ips_en_alerte(export: Path, seuil: int, fenetre: timedelta) -> list[str]:
+    """IP en alerte, calculées sans passer par le texte du rapport."""
+    alertes = detecter(lire_export(export).evenements, seuil, fenetre)
+    return [str(a.ip) for a in alertes]
+
+
 class TestRapport:
     def test_rapport_sur_stdout(self, capsys, donnees):
         export = donnees / "export_valide.csv"
@@ -58,6 +70,18 @@ class TestRapport:
 
     def test_alertes_detectees_code_1(self, capsys, donnees):
         export = donnees / "export_attaque.csv"
+
+        code, sortie, _ = lancer(capsys, export, "--modeles", EGO)
+
+        assert (code, sortie) == (1, rapport_attendu(export))
+
+    def test_alerte_locale_seule_code_1(self, capsys, ecrire_export):
+        lignes = "".join(
+            f'"2026-11-03T08:0{n}:00+01:00","bob","127.0.0.1"\n' for n in range(5)
+        )
+        export = ecrire_export(("Date,Compte,IP\n" + lignes).encode("utf-8"))
+        alertes = detecter(lire_export(export).evenements, 5, FENETRE)
+        assert [a.est_locale for a in alertes] == [True]
 
         code, sortie, _ = lancer(capsys, export, "--modeles", EGO)
 
@@ -193,6 +217,12 @@ class TestValidationDesOptions:
             ("--fenetre", "1441"),  # au-delà de MARGE_CALCUL (1 jour)
             ("--fenetre", "10.5"),  # minutes entières
             ("--fenetre", "dix"),
+            # int() accepterait ces formes ; seuls les chiffres 0-9 le sont.
+            ("--seuil", " 5"),
+            ("--seuil", "+10"),
+            ("--seuil", "1_000"),
+            ("--seuil", "٥"),  # chiffre arabe-indien 5
+            ("--seuil", "1234567890"),  # 10 chiffres
         ],
     )
     def test_valeur_refusee_par_argparse(self, capsys, donnees, option, valeur):
@@ -204,10 +234,24 @@ class TestValidationDesOptions:
         assert erreurs.startswith("usage: sentinelle.py")
         assert f"argument {option}" in erreurs
 
+    def test_valeur_tres_longue_non_recopiee_en_entier(self, capsys, donnees):
+        code, _, erreurs = lancer(
+            capsys, donnees / "export_attaque.csv", "--seuil", "9" * 5000
+        )
+
+        assert code == 2
+        assert "argument --seuil" in erreurs
+        assert len(erreurs) < 1000
+
     @pytest.mark.parametrize(
         "options",
-        [["--seuil", "1"], ["--fenetre", "1"], ["--fenetre", "1440"]],
-        ids=["seuil-1", "fenetre-1", "fenetre-1440"],
+        [
+            ["--seuil", "1"],
+            ["--seuil", "007"],
+            ["--fenetre", "1"],
+            ["--fenetre", "1440"],
+        ],
+        ids=["seuil-1", "seuil-007", "fenetre-1", "fenetre-1440"],
     )
     def test_bornes_acceptees(self, capsys, donnees, options):
         code, _, _ = lancer(capsys, donnees / "export_attaque.csv", *options)
@@ -322,10 +366,11 @@ class TestParametres:
         # 203.0.113.66 atteint 6 et ::1 atteint 5 : à 6, seule la première reste.
         export = donnees / "export_attaque.csv"
 
+        assert ips_en_alerte(export, 6, FENETRE) == ["203.0.113.66"]
+
         code, sortie, _ = lancer(capsys, export, "--modeles", EGO, "--seuil", 6)
 
         assert (code, sortie) == (1, rapport_attendu(export, seuil=6))
-        assert "::1" not in sortie and "203.0.113.66" in sortie
 
     def test_seuil_au_dessus_de_tout_code_0(self, capsys, donnees):
         export = donnees / "export_attaque.csv"
@@ -338,8 +383,194 @@ class TestParametres:
         # Une fenêtre d'une minute ne contient plus 5 échecs de ::1 (90 s).
         export = donnees / "export_attaque.csv"
         une_minute = timedelta(minutes=1)
+        assert "::1" in ips_en_alerte(export, 5, FENETRE)
+        assert "::1" not in ips_en_alerte(export, 5, une_minute)
 
         code, sortie, _ = lancer(capsys, export, "--modeles", EGO, "--fenetre", 1)
 
         assert sortie == rapport_attendu(export, fenetre=une_minute)
-        assert "::1" not in sortie
+
+
+class TestDemiCodets:
+    def test_modeles_avec_demi_codet_refuses_code_2(self, capsys, donnees, tmp_path):
+        modeles = tmp_path / "ego.json"
+        modeles.write_text(
+            '{"entete": ["Ego \\ud800."], "alerte": ["$ip"], "alerte_locale": ["$ip"],'
+            ' "rien_a_signaler": ["Rien."], "lignes_rejetees": ["$nombre."],'
+            ' "conclusion": ["Fin."]}',
+            encoding="utf-8",
+        )
+
+        code, sortie, erreurs = lancer(
+            capsys, donnees / "export_attaque.csv", "--modeles", modeles
+        )
+
+        assert (code, sortie) == (2, "")
+        assert erreurs.startswith("sentinelle.py : erreur : modèles invalides : ")
+
+    @pytest.mark.parametrize("vers_fichier", [False, True], ids=["stdout", "sortie"])
+    def test_rapport_non_encodable_code_2_sans_rien_ecrire(
+        self, capsys, donnees, tmp_path, monkeypatch, vers_fichier
+    ):
+        # Défense en profondeur : le chargement des modèles refuse déjà ce cas.
+        monkeypatch.setattr(sentinelle, "rediger", lambda *_args: "Ego \ud800.\n")
+        cible = tmp_path / "rapport.txt"
+        options = ["--sortie", cible] if vers_fichier else []
+
+        code, sortie, erreurs = lancer(capsys, donnees / "export_attaque.csv", *options)
+
+        assert (code, sortie, cible.exists()) == (2, "", False)
+        assert erreurs == (
+            "sentinelle.py : erreur : rapport impossible à écrire en UTF-8"
+            " (demi-codet isolé \\ud800)\n"
+        )
+
+    def test_demi_codet_sur_stderr_echappe_sans_traceback(self, donnees, monkeypatch):
+        # Une ligne de commande Windows peut contenir un demi-codet isolé, et
+        # argparse le recopie tel quel dans son message d'erreur.
+        erreurs = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", write_through=True)
+        monkeypatch.setattr(sys, "stderr", erreurs)
+
+        code = appeler(donnees / "export_attaque.csv", "\ud800")
+
+        assert code == 2
+        assert b"unrecognized arguments: \\ud800" in erreurs.buffer.getvalue()
+
+
+class _TubeFerme(io.RawIOBase):
+    """Sortie standard dont le lecteur a disparu (pipe fermé, `head`…)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ferme = True
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, octets) -> int:
+        if self.ferme:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return len(octets)
+
+
+class TestSortieStandardEnErreur:
+    def test_code_2_message_et_rejets_affiches(self, capsys, donnees, monkeypatch):
+        tube = _TubeFerme()
+        stdout = io.TextIOWrapper(io.BufferedWriter(tube), encoding="utf-8")
+        monkeypatch.setattr(sys, "stdout", stdout)
+
+        code = appeler(donnees / "export_attaque.csv")
+
+        tube.ferme = False  # laisse le ramasse-miettes vider le tampon sans erreur
+        assert code == 2
+        assert capsys.readouterr().err.splitlines() == [
+            "ligne 16 rejetée : IP absente : -",
+            "sentinelle.py : erreur : écriture impossible sur la sortie standard"
+            " (Invalid argument)",
+        ]
+
+    def test_stdout_absent_code_2(self, capsys, donnees, monkeypatch):
+        # Python met sys.stdout à None si le descripteur 1 est fermé au lancement.
+        monkeypatch.setattr(sys, "stdout", None)
+
+        code = appeler(donnees / "export_attaque.csv")
+
+        assert code == 2
+        assert capsys.readouterr().err.endswith(
+            "sentinelle.py : erreur : écriture impossible sur la sortie standard"
+            " (fermée)\n"
+        )
+
+    def test_vrai_tube_ferme_code_2_sans_traceback(self, donnees, tmp_path):
+        lecture, ecriture = os.pipe()
+        os.close(lecture)  # personne ne lira : toute écriture échoue
+        try:
+            resultat = subprocess.run(
+                [
+                    sys.executable,
+                    str(RACINE / "sentinelle.py"),
+                    str(donnees / "export_attaque.csv"),
+                ],
+                cwd=tmp_path,
+                env={**os.environ, **CP1252},
+                stdout=ecriture,
+                stderr=subprocess.PIPE,
+                timeout=60,
+            )
+        finally:
+            os.close(ecriture)
+
+        lignes = sans_cr(resultat.stderr).decode("utf-8").splitlines()
+        assert resultat.returncode == 2, lignes
+        assert lignes[0] == "ligne 16 rejetée : IP absente : -"
+        assert lignes[1].startswith(
+            "sentinelle.py : erreur : écriture impossible sur la sortie standard"
+        )
+        assert len(lignes) == 2, lignes  # ni traceback ni « Exception ignored »
+
+
+class TestSortieProtegee:
+    @pytest.mark.parametrize(
+        ("protege", "attendu"),
+        [("export", "l'export"), ("modeles", "le fichier de modèles")],
+    )
+    def test_sortie_identique_refusee_sans_ecraser(
+        self, capsys, donnees, tmp_path, protege, attendu
+    ):
+        export = tmp_path / "export.csv"
+        export.write_bytes((donnees / "export_attaque.csv").read_bytes())
+        modeles = tmp_path / "ego.json"
+        modeles.write_bytes(EGO.read_bytes())  # copie : le vrai ego.json reste intact
+        cible = export if protege == "export" else modeles
+        avant = cible.read_bytes()
+        (tmp_path / "sous").mkdir()
+        autre_graphie = tmp_path / "sous" / ".." / cible.name
+
+        code, sortie, erreurs = lancer(
+            capsys, export, "--modeles", modeles, "--sortie", autre_graphie
+        )
+
+        assert (code, sortie) == (2, "")
+        assert cible.read_bytes() == avant
+        assert erreurs.startswith(
+            f"sentinelle.py : erreur : --sortie écraserait {attendu} : "
+        )
+        assert erreurs.count("\n") == 1
+
+
+PIEGE = "piege\x1b]0;pwn\x07\u202e.csv"
+PIEGE_NEUTRALISE = "piege\\x1b]0;pwn\\x07\\u202e.csv"
+
+
+class TestCheminsNeutralises:
+    @pytest.mark.parametrize("option", ["export", "--modeles", "--sortie"])
+    def test_chemin_piege_neutralise_dans_le_message(
+        self, capsys, donnees, tmp_path, option
+    ):
+        piege = tmp_path / PIEGE
+        export, modeles, options = donnees / "export_attaque.csv", EGO, []
+        if option == "export":
+            export = piege
+        elif option == "--modeles":
+            modeles = piege
+        else:
+            options = ["--sortie", piege]
+
+        code, _, erreurs = lancer(capsys, export, "--modeles", modeles, *options)
+
+        assert code == 2
+        assert not {"\x1b", "\x07", "\u202e"} & set(erreurs)
+        assert f"{tmp_path.as_posix()}/{PIEGE_NEUTRALISE}" in erreurs
+        assert erreurs.count("\n") == 1
+
+
+class TestInterruption:
+    def test_ctrl_c_code_130_sans_traceback(self, capsys, donnees, monkeypatch):
+        def interrompre(*_args):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(sentinelle, "detecter", interrompre)
+
+        code, sortie, erreurs = lancer(capsys, donnees / "export_attaque.csv")
+
+        assert (code, sortie, erreurs) == (130, "", "")
