@@ -13,6 +13,7 @@ from ego._redaction import (
 from ego.detection import Alerte
 from ego.lecture import LigneRejetee
 from ego.modeles import Modeles
+from ego.neutralisation import neutraliser
 
 # API publique du module : formater_duree et formater_instant sont réexportés.
 __all__ = ["formater_duree", "formater_instant", "rediger"]
@@ -53,9 +54,15 @@ def _section(
     communs: Mapping[str, str],
 ) -> str:
     return "\n".join(
-        remplir(variantes, graine + rang, {**communs, **valeurs_alerte(alerte)})
+        remplir(variantes, graine + rang, {**communs, **_valeurs(alerte)})
         for rang, alerte in enumerate(alertes)
     )
+
+
+def _valeurs(alerte: Alerte) -> dict[str, str]:
+    # str(ip) peut porter un identifiant de zone arbitraire (fe80::1%<zone>) :
+    # neutralisé une fois, comme les comptes.
+    return {**valeurs_alerte(alerte), "ip": neutraliser(str(alerte.ip))}
 
 
 def _lignes_rejetees(

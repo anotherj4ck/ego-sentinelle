@@ -167,6 +167,17 @@ class TestComptes:
         assert "\u202e" not in texte
         assert "comptes=[admin\\u202enimda]" in texte
 
+    def test_ip_avec_zone_piegee_neutralisee_une_fois(self):
+        # ipaddress accepte « fe80::1%<zone> » ; la lecture le refuse, mais
+        # rediger() ne doit pas compter sur elle.
+        rlo, barre = "\N{RIGHT-TO-LEFT OVERRIDE}", "\N{REVERSE SOLIDUS}"
+
+        texte = rapport([alerte(ip=f"fe80::1%a{rlo}b{barre}c")])
+
+        assert rlo not in texte
+        assert f"ip=fe80::1%a{barre}u202eb{barre * 2}c " in texte
+        assert barre * 3 not in texte
+
     @pytest.mark.parametrize(
         ("compte", "affiche"),
         [
