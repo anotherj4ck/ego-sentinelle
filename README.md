@@ -333,7 +333,7 @@ rapport HTML s'en passera.
 |---|---|---|
 | `titre_alerte` | Grand titre, s'il y a au moins une alerte. | `$nombre` : nombre d'IP en alerte, externes et locales |
 | `titre_calme` | Grand titre, s'il n'y a aucune alerte. | `$total` : nombre d'échecs analysés dans l'export |
-| `registre` | Phrase qui introduit la liste des noms collectés. | `$nombre` : nombre de noms collectés |
+| `registre` | Phrase qui introduit le registre : les IP et les comptes des alertes, sans doublon (la casse est ignorée). Au plus 50 entrées sont affichées. | `$nombre` : **total** des entrées uniques, y compris celles qui ne sont pas affichées ; ce n'est pas le nombre affiché |
 | `fin_lecture` | Dernière ligne du rapport. | aucun |
 
 Exemple de clé optionnelle, à ajouter aux six autres :

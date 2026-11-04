@@ -24,7 +24,7 @@ CHAMPS_PAR_CLE: Mapping[str, frozenset[str]] = MappingProxyType(
         # Répliques du rapport HTML, ignorées par le rapport texte.
         "titre_alerte": frozenset({"nombre"}),  # nombre d'IP en alerte
         "titre_calme": frozenset({"total"}),  # nombre d'échecs analysés
-        "registre": frozenset({"nombre"}),  # nombre de noms collectés
+        "registre": frozenset({"nombre"}),  # total des entrées uniques du registre
         "fin_lecture": frozenset(),
     }
 )
