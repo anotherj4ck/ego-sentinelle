@@ -17,7 +17,7 @@ administrateur, à la racine du dépôt :
 ```powershell
 # 1. Générer six échecs d'ouverture de session, avec un compte différent à chaque fois
 1..6 | ForEach-Object { net use '\\127.0.0.1\IPC$' /user:"test$_" 'mauvais-mot-de-passe' }
-# 2. Exporter les événements 4625 des dernières 24 heures
+# 2. Exporter les événements 4625 des dernières 24 heures (console administrateur obligatoire)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\export-4625.ps1 -Sortie .\echecs.csv
 # 3. Analyser : Ego signale l'adresse de bouclage dans ses alertes locales (code de sortie 1)
 python sentinelle.py .\echecs.csv
@@ -168,7 +168,7 @@ Les options numériques n'acceptent que des chiffres de 0 à 9 : `+5`, `1_000` o
 |---|---|
 | 0 | Aucune alerte. |
 | 1 | Au moins une alerte, externe ou locale. |
-| 2 | Erreur, signalée sur stderr par un message en français, sans traceback. Exemples : export ou modèles introuvables ou invalides, option invalide (avec le rappel de l'usage), écriture impossible, `--sortie` qui écraserait un fichier protégé. |
+| 2 | Erreur, signalée sur stderr sans traceback. Exemples : export ou modèles introuvables ou invalides, option invalide (avec le rappel de l'usage), écriture impossible, `--sortie` qui écraserait un fichier protégé. Les messages sont en français pour les erreurs de fichier et de valeur ; ceux d'argparse (argument manquant ou inconnu, rappel de l'usage) restent en anglais. |
 | 130 | Interruption par Ctrl+C, sans message. |
 
 Avec `| Select-Object -First N`, c'est **PowerShell** qui coupe lui-même le processus
@@ -188,7 +188,7 @@ if ($LASTEXITCODE -eq 1) { Write-Warning "Ego a des choses à dire : voir rappor
   `--sortie`.
 - **Les lignes rejetées** vont sur stderr, une par ligne, **avant** le rapport. Par
   exemple : `ligne 16 rejetée : IP absente : -`.
-  - Au-delà de 20, seul « … et N autres » est affiché.
+  - Au-delà de 20, seul « … et N autre(s) » est affiché.
   - Les motifs de rejet sont : ligne CSV illisible, nombre de champs incorrect, date
     illisible, date sans fuseau horaire, IP absente, IP invalide.
   - Les échecs locaux sans adresse (`-`) entrent dans le motif « IP absente ».
@@ -306,6 +306,9 @@ le rapport en choisit une de façon déterministe :
 - le choix dépend des données, donc le ton change d'un export à l'autre ;
 - dans une même section, les variantes tournent d'une alerte à la suivante.
 
+Exemple abrégé, avec une seule variante par clé. Il est valide pour `--modeles`, mais
+le test de voix exige au moins deux variantes par clé dans `modeles/ego.json`.
+
 ```json
 {
   "entete": ["Analyse terminée. J'ai tout lu. Je lis toujours tout."],
@@ -338,7 +341,7 @@ Les champs suivent la syntaxe de `string.Template` : `$champ` ou `${champ}`. Éc
 | `$duree` | Durée de cette fenêtre la plus chargée, en français : `1 minute 57 secondes`. |
 | `$debut`, `$fin` | Premier et dernier échec de cette fenêtre : `2026-11-03 02:14:05 UTC+01:00`. |
 | `$total` | Tous les échecs de cette IP dans l'export. |
-| `$comptes` | Comptes visés, distincts et triés. Au plus 10, puis « et N autres ». Chaque nom est tronqué à 64 caractères et neutralisé (voir [Sécurité](#sécurité)). Un nom vide devient `(sans nom)`. |
+| `$comptes` | Comptes visés, distincts et triés. Au plus 10, puis « et N autre(s) ». Chaque nom est tronqué à 64 caractères lus (marque « … » comprise), puis neutralisé (voir [Sécurité](#sécurité)). Un nom vide devient `(sans nom)`. |
 | `$seuil` | Valeur de `--seuil`. |
 | `$fenetre` | Valeur de `--fenetre`, en français : `10 minutes`. |
 
@@ -430,6 +433,10 @@ La barre oblique inverse est doublée, pour que l'échappement reste non ambigu.
 - au plus 20 lignes rejetées affichées ;
 - valeurs fautives tronquées à 100 caractères.
 
+Ces longueurs portent sur le texte lu, marque « … » comprise, avant neutralisation :
+un caractère neutralisé s'affiche ensuite sur plusieurs caractères (`\x1b`), si bien
+que la ligne affichée peut être plus longue. Elle reste bornée.
+
 Les noms de comptes sont insérés dans les répliques comme du texte : ils ne sont
 jamais interprétés comme un modèle.
 
@@ -451,7 +458,8 @@ Le `.gitignore` du dépôt protège :
 
 Les exemples de `tests/donnees/` sont versionnés. Un test de garde,
 `tests/test_donnees_fictives.py`, y vérifie que les adresses IP appartiennent aux
-plages de documentation (RFC 5737 : `192.0.2.0/24`, `203.0.113.0/24`) ou au bouclage.
+plages de documentation (RFC 5737 : `192.0.2.0/24`, `203.0.113.0/24`) ou sont
+exactement `::1` ou `127.0.0.1`.
 Ce test **ne vérifie pas les noms de comptes** : n'y copiez jamais de lignes réelles.
 
 Avant de publier un dépôt ou un fork, vérifiez qu'aucun fichier sensible n'a été
