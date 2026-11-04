@@ -20,6 +20,8 @@ SEPARATEUR_COMPTES = ", "
 LONGUEUR_MAX_COMPTE = 64
 COMPTES_MAX_AFFICHES = 10
 REJETS_MAX_AFFICHES = 20
+# Rapport HTML : chaque bloc d'alerte pèse au plus ~13 Kio (voir test_rapport_html).
+ALERTES_MAX_AFFICHEES = 200
 
 
 def formater_duree(duree: timedelta) -> str:
