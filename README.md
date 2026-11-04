@@ -4,6 +4,9 @@ Ego Sentinelle repère, dans le journal Sécurité de Windows, les adresses IP q
 accumulent les échecs d'ouverture de session (événement 4625). Il rend son verdict
 dans la voix d'Ego, sans rien bloquer ni modifier.
 
+Ego vient d'[*Ascendant*](https://anotherj4ck.github.io/auteur/), mon roman de science-fiction : c'est lui
+qui gouverne Londinium, et rien ne lui échappe.
+
 <!-- Capture d'écran : remplacer la ligne ci-dessous par l'image, par exemple
      ![Rapport d'Ego sur un export fictif](docs/capture.png) -->
 > *Capture d'écran à venir.*
