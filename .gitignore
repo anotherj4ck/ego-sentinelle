@@ -8,3 +8,8 @@ htmlcov/
 # Exports réels (comptes et IP réels) : jamais versionnés, sauf les données de test fictives.
 *.csv
 !tests/donnees/*.csv
+# Rapports écrits par --sortie : ils recopient les comptes et les IP de l'export.
+*.txt
+!requirements*.txt
+# Journaux Windows exportés depuis l'Observateur d'événements.
+*.evtx
