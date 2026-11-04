@@ -6,6 +6,7 @@ ne dépend de la formulation des répliques d'ego.json.
 
 import errno
 import io
+import json
 import os
 import subprocess
 import sys
@@ -23,6 +24,15 @@ from ego.rapport import rediger
 RACINE = Path(__file__).parent.parent
 EGO = RACINE / "modeles" / "ego.json"
 FENETRE = timedelta(minutes=10)
+# Les six clés lues par le rapport texte.
+CLES_TEXTE = (
+    "entete",
+    "alerte",
+    "alerte_locale",
+    "rien_a_signaler",
+    "lignes_rejetees",
+    "conclusion",
+)
 
 
 def appeler(*arguments: object) -> int | str:
@@ -86,6 +96,22 @@ class TestRapport:
         code, sortie, _ = lancer(capsys, export, "--modeles", EGO)
 
         assert (code, sortie) == (1, rapport_attendu(export))
+
+    def test_cles_du_rapport_html_sans_effet_sur_le_texte(
+        self, capsys, donnees, tmp_path
+    ):
+        export = donnees / "export_attaque.csv"
+        complets = donnees / "modeles_html.json"
+        repliques = json.loads(complets.read_text(encoding="utf-8"))
+        six_cles = tmp_path / "six_cles.json"
+        six_cles.write_text(
+            json.dumps({c: v for c, v in repliques.items() if c in CLES_TEXTE}),
+            encoding="utf-8",
+        )
+
+        code, sortie, _ = lancer(capsys, export, "--modeles", complets)
+
+        assert (code, sortie) == (1, rapport_attendu(export, modeles=six_cles))
 
 
 class TestRejets:

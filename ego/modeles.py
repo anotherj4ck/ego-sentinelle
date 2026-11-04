@@ -21,9 +21,17 @@ CHAMPS_PAR_CLE: Mapping[str, frozenset[str]] = MappingProxyType(
         "rien_a_signaler": CHAMPS_GLOBAUX,
         "lignes_rejetees": CHAMPS_GLOBAUX | {"nombre"},  # nombre de lignes rejetées
         "conclusion": CHAMPS_GLOBAUX,
+        # Répliques du rapport HTML, ignorées par le rapport texte.
+        "titre_alerte": frozenset({"nombre"}),  # nombre d'IP en alerte
+        "titre_calme": frozenset({"total"}),  # nombre d'échecs analysés
+        "registre": frozenset({"nombre"}),  # nombre de noms collectés
+        "fin_lecture": frozenset(),
     }
 )
 CLES = tuple(CHAMPS_PAR_CLE)
+# Absente du fichier, une clé optionnelle vaut None : ego.json reste valide sans elles.
+CLES_OPTIONNELLES = ("titre_alerte", "titre_calme", "registre", "fin_lecture")
+CLES_OBLIGATOIRES = tuple(cle for cle in CLES if cle not in CLES_OPTIONNELLES)
 
 DEBUT_DEMI_CODETS = 0xD800
 FIN_DEMI_CODETS = 0xDFFF
@@ -35,7 +43,10 @@ class ErreurModeles(ValueError):
 
 @dataclass(frozen=True)
 class Modeles:
-    """Variantes string.Template de chaque réplique."""
+    """Variantes string.Template de chaque réplique.
+
+    Une réplique optionnelle absente du fichier vaut None, jamais un tuple vide.
+    """
 
     entete: tuple[str, ...]
     alerte: tuple[str, ...]
@@ -43,10 +54,17 @@ class Modeles:
     rien_a_signaler: tuple[str, ...]
     lignes_rejetees: tuple[str, ...]
     conclusion: tuple[str, ...]
+    titre_alerte: tuple[str, ...] | None = None
+    titre_calme: tuple[str, ...] | None = None
+    registre: tuple[str, ...] | None = None
+    fin_lecture: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         for cle in CLES:
-            _valider_variantes(cle, getattr(self, cle))
+            variantes = getattr(self, cle)
+            if variantes is None and cle in CLES_OPTIONNELLES:
+                continue
+            _valider_variantes(cle, variantes)
 
 
 def charger_modeles(chemin: Path) -> Modeles:
@@ -65,13 +83,16 @@ def charger_modeles(chemin: Path) -> Modeles:
         raise ErreurModeles(f"JSON invalide : {erreur}") from erreur
     if not isinstance(donnees, dict):
         raise ErreurModeles("objet JSON attendu à la racine")
-    absentes = [cle for cle in CLES if cle not in donnees]
+    absentes = [cle for cle in CLES_OBLIGATOIRES if cle not in donnees]
     if absentes:
         raise ErreurModeles(f"clé(s) absente(s) : {', '.join(absentes)}")
     inconnues = sorted(set(donnees) - set(CLES))
     if inconnues:
         raise ErreurModeles(f"clé(s) inconnue(s) : {', '.join(inconnues)}")
-    return Modeles(**{cle: _en_tuple(cle, donnees[cle]) for cle in CLES})
+    # Une valeur null n'est pas une absence : _en_tuple la refuse.
+    return Modeles(
+        **{cle: _en_tuple(cle, donnees[cle]) for cle in CLES if cle in donnees}
+    )
 
 
 def _en_tuple(cle: str, valeur: object) -> tuple[str, ...]:
@@ -93,12 +114,17 @@ def _valider_variantes(cle: str, variantes: tuple[str, ...]) -> None:
                 f"{cle}, variante {rang} : modèle invalide"
                 " ($ isolé ? écrire $$ pour un dollar)"
             )
-        interdits = sorted(set(modele.get_identifiers()) - CHAMPS_PAR_CLE[cle])
+        autorises = CHAMPS_PAR_CLE[cle]
+        interdits = sorted(set(modele.get_identifiers()) - autorises)
         if interdits:
+            rappel = (
+                f"autorisés : {_dollars(sorted(autorises))}"
+                if autorises
+                else "aucun champ autorisé"
+            )
             raise ErreurModeles(
                 f"{cle}, variante {rang} : champ(s) non autorisé(s) : "
-                f"{_dollars(interdits)} (autorisés : "
-                f"{_dollars(sorted(CHAMPS_PAR_CLE[cle]))})"
+                f"{_dollars(interdits)} ({rappel})"
             )
 
 

@@ -289,14 +289,17 @@ préférez `net use` depuis une autre machine.
 Les répliques d'Ego sont dans `modeles/ego.json`. Pour essayer d'autres répliques
 sans toucher à ce fichier, utilisez `--modeles .\mes-repliques.json`.
 
-Le fichier contient exactement **six clés**. Chacune est une liste de variantes, et
-le rapport en choisit une de façon déterministe :
+Le fichier contient **six clés obligatoires** et peut contenir **quatre clés
+optionnelles**. Ces dernières sont réservées au rapport HTML, en préparation ; le
+rapport texte les ignore. Chaque clé est une liste de variantes, et le rapport en
+choisit une de façon déterministe :
 - les mêmes données donnent toujours le même rapport ;
 - le choix dépend des données, donc le ton change d'un export à l'autre ;
 - dans une même section, les variantes tournent d'une alerte à la suivante.
 
-Exemple abrégé, avec une seule variante par clé. Il est valide pour `--modeles`, mais
-le test de voix exige au moins deux variantes par clé dans `modeles/ego.json`.
+Exemple abrégé : les six clés obligatoires, une seule variante par clé. Il est valide
+pour `--modeles`, mais le test de voix exige au moins deux variantes par clé présente
+dans `modeles/ego.json`.
 
 ```json
 {
@@ -323,13 +326,29 @@ Les champs suivent la syntaxe de `string.Template` : `$champ` ou `${champ}`. Éc
 | `lignes_rejetees` | Seulement s'il y a des lignes rejetées. | `$nombre` `$seuil` `$fenetre` |
 | `conclusion` | Toujours, en fin de rapport. | `$seuil` `$fenetre` |
 
+Clés optionnelles, pour le rapport HTML. Une clé absente n'est pas une erreur : le
+rapport HTML s'en passera.
+
+| Clé | Rôle | Champs autorisés |
+|---|---|---|
+| `titre_alerte` | Grand titre, s'il y a au moins une alerte. | `$nombre` : nombre d'IP en alerte, externes et locales |
+| `titre_calme` | Grand titre, s'il n'y a aucune alerte. | `$total` : nombre d'échecs analysés dans l'export |
+| `registre` | Phrase qui introduit la liste des noms collectés. | `$nombre` : nombre de noms collectés |
+| `fin_lecture` | Dernière ligne du rapport. | aucun |
+
+Exemple de clé optionnelle, à ajouter aux six autres :
+
+```json
+  "titre_calme": ["$total échecs lus. Aucun ne mérite mon attention."]
+```
+
 | Champ | Contenu |
 |---|---|
 | `$ip` | Adresse en alerte. |
-| `$nombre` | Pour une alerte : nombre d'échecs dans la fenêtre la plus chargée. Pour `lignes_rejetees` : nombre de lignes rejetées. |
+| `$nombre` | Pour une alerte : nombre d'échecs dans la fenêtre la plus chargée. Pour `lignes_rejetees` : nombre de lignes rejetées. Pour `titre_alerte` et `registre` : voir le tableau des clés optionnelles. |
 | `$duree` | Durée de cette fenêtre la plus chargée, en français : `1 minute 57 secondes`. |
 | `$debut`, `$fin` | Premier et dernier échec de cette fenêtre : `2026-11-03 02:14:05 UTC+01:00`. |
-| `$total` | Tous les échecs de cette IP dans l'export. |
+| `$total` | Pour une alerte : tous les échecs de cette IP dans l'export. Pour `titre_calme` : voir le tableau des clés optionnelles. |
 | `$comptes` | Comptes visés, distincts et triés. Au plus 10, puis « et N autre(s) ». Chaque nom est tronqué à 64 caractères lus (marque « … » comprise), puis neutralisé (voir [Sécurité](#sécurité)). Un nom vide devient `(sans nom)`. |
 | `$seuil` | Valeur de `--seuil`. |
 | `$fenetre` | Valeur de `--fenetre`, en français : `10 minutes`. |
@@ -339,8 +358,9 @@ Les champs suivent la syntaxe de `string.Template` : `$champ` ou `${champ}`. Éc
 Un fichier invalide arrête le programme avec le code 2 et un message qui désigne la
 clé et la variante fautives. Il est refusé dans les cas suivants :
 - JSON invalide, ou encodage autre qu'UTF-8 (le BOM est toléré) ;
-- clé absente, inconnue ou en double ;
-- liste vide, ou variante vide ou non textuelle ;
+- clé obligatoire absente, clé inconnue ou en double ;
+- liste vide, ou variante vide ou non textuelle ; une clé optionnelle à `null` est
+  refusée aussi : pour s'en passer, retirez la clé ;
 - `$` isolé ;
 - champ non autorisé pour la clé ;
 - caractère invalide en UTF-8 (demi-codet isolé, comme `"\ud800"`).
@@ -350,7 +370,8 @@ clé et la variante fautives. Il est refusé dans les cas suivants :
 `tests/test_voix_ego.py` vérifie mécaniquement que `modeles/ego.json` garde la voix
 d'Ego :
 
-- **Au moins deux variantes** par clé.
+- **Au moins deux variantes** par clé obligatoire, et par clé optionnelle présente.
+  Les règles suivantes s'appliquent aussi aux clés optionnelles présentes.
 - **Aucune formule interdite**, sans tenir compte des majuscules ni des accents :
   - excuses : `pardon`, `pardonnez-moi`, `désolé(e)(s)`, `je m'excuse`, `excusez…` ;
   - remerciements : `merci` (sauf dans « sans merci »), `je vous remercie` ;

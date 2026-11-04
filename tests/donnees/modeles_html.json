@@ -1,0 +1,12 @@
+{
+  "entete": ["ENTETE seuil=$seuil fenetre=$fenetre"],
+  "alerte": ["ALERTE ip=$ip nombre=$nombre"],
+  "alerte_locale": ["LOCALE ip=$ip nombre=$nombre"],
+  "rien_a_signaler": ["RIEN seuil=$seuil"],
+  "lignes_rejetees": ["REJETS nombre=$nombre"],
+  "conclusion": ["FIN fenetre=$fenetre"],
+  "titre_alerte": ["TITRE_ALERTE nombre=$nombre", "TITRE_ALERTE bis nombre=${nombre}"],
+  "titre_calme": ["TITRE_CALME total=$total", "TITRE_CALME bis total=${total}"],
+  "registre": ["REGISTRE nombre=$nombre", "REGISTRE bis nombre=${nombre}"],
+  "fin_lecture": ["FIN_LECTURE", "FIN_LECTURE bis $$"]
+}

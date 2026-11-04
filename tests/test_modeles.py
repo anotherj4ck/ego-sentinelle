@@ -1,8 +1,13 @@
 import json
+from pathlib import Path
 
 import pytest
 
 from ego.modeles import ErreurModeles, Modeles, charger_modeles
+
+# Les six clés obligatoires et les quatre optionnelles du rapport HTML.
+MODELES_HTML = Path(__file__).parent / "donnees" / "modeles_html.json"
+CLES_OPTIONNELLES = ("titre_alerte", "titre_calme", "registre", "fin_lecture")
 
 VALIDES = {
     "entete": ["Entête $seuil $fenetre."],
@@ -179,3 +184,131 @@ class TestChamps:
         modeles = charger_modeles(ecrire_modeles(avec(**{cle: [variante]})))
 
         assert getattr(modeles, cle) == (variante,)
+
+
+def charge(chemin) -> Modeles:
+    """Modèles chargés ; tout refus échoue par assertion."""
+    try:
+        return charger_modeles(chemin)
+    except Exception as erreur:  # noqa: BLE001 - rendu lisible par l'assertion
+        raise AssertionError(f"refusé : {type(erreur).__name__}: {erreur}") from None
+
+
+def construits(**variantes: tuple[str, ...]) -> Modeles:
+    """Modeles construits directement ; toute exception échoue par assertion."""
+    try:
+        return Modeles(**variantes)
+    except Exception as erreur:  # noqa: BLE001 - rendu lisible par l'assertion
+        raise AssertionError(f"refusé : {type(erreur).__name__}: {erreur}") from None
+
+
+def optionnelles(modeles: Modeles) -> dict[str, object]:
+    return {cle: getattr(modeles, cle, "attribut absent") for cle in CLES_OPTIONNELLES}
+
+
+EN_TUPLES = {c: tuple(v) for c, v in VALIDES.items()}
+
+
+class TestClesOptionnelles:
+    def test_absentes_exposees_comme_none(self, ecrire_modeles):
+        # Le ego.json actuel n'a que les six clés : il doit rester valide.
+        modeles = charge(ecrire_modeles(VALIDES))
+
+        assert optionnelles(modeles) == dict.fromkeys(CLES_OPTIONNELLES)
+
+    def test_fichier_complet_charge_avec_ses_variantes(self):
+        attendu = json.loads(MODELES_HTML.read_text(encoding="utf-8"))
+
+        modeles = charge(MODELES_HTML)
+
+        assert optionnelles(modeles) == {
+            cle: tuple(attendu[cle]) for cle in CLES_OPTIONNELLES
+        }
+        assert modeles == construits(**{c: tuple(v) for c, v in attendu.items()})
+
+    def test_une_seule_presente_les_autres_none(self, ecrire_modeles):
+        modeles = charge(ecrire_modeles(avec(registre=["$nombre noms."])))
+
+        assert optionnelles(modeles) == {
+            **dict.fromkeys(CLES_OPTIONNELLES),
+            "registre": ("$nombre noms.",),
+        }
+
+    def test_construction_directe_sans_cles_optionnelles(self):
+        modeles = construits(**EN_TUPLES)
+
+        assert optionnelles(modeles) == dict.fromkeys(CLES_OPTIONNELLES)
+
+    def test_construction_directe_validee(self):
+        try:
+            Modeles(**EN_TUPLES, fin_lecture=("$ip.",))  # type: ignore[call-arg]
+        except Exception as erreur:  # noqa: BLE001 - le type est vérifié juste après
+            message = f"{type(erreur).__name__}: {erreur}"
+        else:
+            message = "aucune exception"
+
+        assert message.startswith("ErreurModeles: fin_lecture, variante 1 : champ")
+
+    def test_cle_voisine_inconnue_refusee(self, ecrire_modeles):
+        message = refus(ecrire_modeles(avec(titre_alertes=["$nombre."])))
+
+        assert "clé(s) inconnue(s) : titre_alertes" in message
+
+    @pytest.mark.parametrize(
+        ("valeur", "attendu"),
+        [
+            # null n'est pas une absence : pour omettre la clé, on la retire.
+            (None, "titre_alerte : liste de variantes attendue"),
+            ("$nombre.", "titre_alerte : liste de variantes attendue"),
+            ([], "titre_alerte : au moins une variante attendue"),
+            ([""], "titre_alerte, variante 1 : texte non vide attendu"),
+            (["$nombre.", "Coût : 5 $."], "titre_alerte, variante 2 : modèle invalide"),
+        ],
+        ids=["null", "chaine", "liste-vide", "vide", "dollar-seul"],
+    )
+    def test_variantes_mal_formees_refusees(self, ecrire_modeles, valeur, attendu):
+        assert attendu in refus(ecrire_modeles(avec(titre_alerte=valeur)))
+
+    @pytest.mark.parametrize("cle", CLES_OPTIONNELLES)
+    def test_demi_codet_isole_refuse(self, ecrire_modeles, cle):
+        texte = json.dumps(avec(**{cle: ["Lu.", "Lu \udfff."]}))
+
+        message = refus(ecrire_modeles(texte))
+
+        assert f"{cle}, variante 2 : demi-codet isolé \\udfff" in message
+
+    @pytest.mark.parametrize(
+        ("cle", "variante", "interdit", "autorises"),
+        [
+            ("titre_alerte", "$nombre $total.", "$total", "(autorisés : $nombre)"),
+            ("titre_alerte", "$seuil.", "$seuil", "(autorisés : $nombre)"),
+            ("titre_calme", "$nombre.", "$nombre", "(autorisés : $total)"),
+            ("titre_calme", "${fenetre}.", "$fenetre", "(autorisés : $total)"),
+            ("registre", "$comptes.", "$comptes", "(autorisés : $nombre)"),
+            ("fin_lecture", "$nombre.", "$nombre", "(aucun champ autorisé)"),
+            ("fin_lecture", "${seuil}.", "$seuil", "(aucun champ autorisé)"),
+        ],
+    )
+    def test_champ_non_autorise_refuse(
+        self, ecrire_modeles, cle, variante, interdit, autorises
+    ):
+        message = refus(ecrire_modeles(avec(**{cle: ["Lu.", variante]})))
+
+        assert (
+            f"{cle}, variante 2 : champ(s) non autorisé(s) : {interdit} {autorises}"
+            in message
+        )
+
+    @pytest.mark.parametrize(
+        ("cle", "variante"),
+        [
+            ("titre_alerte", "$nombre alertes. ${nombre} encore."),
+            ("titre_calme", "${total} échecs. $total lus."),
+            ("registre", "$nombre noms."),
+            ("fin_lecture", "Fin. Coût : 5 $$."),
+        ],
+    )
+    def test_champs_autorises_acceptes(self, ecrire_modeles, cle, variante):
+        modeles = charge(ecrire_modeles(avec(**{cle: [variante, "Autre."]})))
+
+        assert optionnelles(modeles)[cle] == (variante, "Autre.")

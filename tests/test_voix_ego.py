@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from ego.modeles import CLES, charger_modeles
+from ego.modeles import CLES, CLES_OBLIGATOIRES, CLES_OPTIONNELLES, charger_modeles
 
 CHEMIN_EGO = Path(__file__).parent.parent / "modeles" / "ego.json"
 # Lecture brute pour paramétrer ; la validation complète est testée à part.
@@ -221,7 +221,10 @@ class TestEgoJson:
         charger_modeles(CHEMIN_EGO)
 
     def test_plusieurs_variantes_par_cle(self):
-        pauvres = [cle for cle in CLES if len(REPLIQUES.get(cle, [])) < 2]
+        # Les clés optionnelles (rapport HTML) ne sont jugées que si elles sont là.
+        jugees = [*CLES_OBLIGATOIRES, *(c for c in CLES_OPTIONNELLES if c in REPLIQUES)]
+
+        pauvres = [cle for cle in jugees if len(REPLIQUES.get(cle, [])) < 2]
 
         assert pauvres == []
 
