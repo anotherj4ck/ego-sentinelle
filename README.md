@@ -65,17 +65,6 @@ Analyse terminée. J'ai tout lu. Je lis toujours tout.
 Fin du rapport. Retournez à vos cycles.
 ```
 
-## Pourquoi Ego
-
-<!-- Paragraphe provisoire, à réécrire par l'auteur du projet. -->
-Ego est une voix venue d'un roman : celle qui veille sur Londinium et qui lit tout.
-Il parle par phrases courtes. Il menace sans hausser le ton et ne s'excuse jamais.
-Il regarde les humains comme un matériau. Lire un journal de sécurité ligne à ligne,
-puis rendre un verdict sec, c'est exactement son rôle.
-
-Connaître l'intrigue n'est pas nécessaire pour utiliser l'outil, et ce README n'en
-dévoile rien.
-
 ## Prérequis
 
 - **Windows** (10, 11 ou Server), pour le journal Sécurité et ses événements 4625.
