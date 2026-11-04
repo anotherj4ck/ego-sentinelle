@@ -28,9 +28,11 @@ def collecter_registre(
     # bool est un int en Python : True passerait pour 1.
     if isinstance(plafond, bool) or not isinstance(plafond, int) or plafond < 1:
         raise ValueError(f"plafond invalide : {plafond!r} (entier >= 1 attendu)")
-    uniques: dict[str, str] = {}  # clé casefold -> première graphie
+    # Clé lower() -> première graphie. Pas casefold() : il confond « ß » et « ss »,
+    # que Windows tient pour deux comptes distincts.
+    uniques: dict[str, str] = {}
     for nom in _noms(alertes):
-        uniques.setdefault(nom.casefold(), nom)
+        uniques.setdefault(nom.lower(), nom)
     noms = tuple(uniques.values())[:plafond]
     return Registre(noms=noms, total=len(uniques), masques=len(uniques) - len(noms))
 

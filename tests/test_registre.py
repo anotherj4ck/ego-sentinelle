@@ -71,11 +71,14 @@ class TestDedoublonnage:
 
         assert registre == Registre(("192.0.2.1", "Admin", "192.0.2.2"), 3, 0)
 
-    def test_casefold_et_non_simple_minuscule(self):
-        # « ß ».casefold() vaut « ss » ; lower() le laisserait tel quel.
+    def test_eszett_distinct_de_ss_comme_sous_windows(self):
+        # Windows compare les comptes caractère par caractère : « Straße » et
+        # « STRASSE » sont deux comptes. casefold() les confondrait (ß -> ss).
         alertes = (alerte("192.0.2.1", "Straße", "STRASSE"),)
 
-        assert collecter_registre(alertes).noms == ("192.0.2.1", "Straße")
+        assert collecter_registre(alertes) == Registre(
+            ("192.0.2.1", "Straße", "STRASSE"), 3, 0
+        )
 
     def test_ip_identique_a_un_compte_comptee_une_fois(self):
         alertes = (
