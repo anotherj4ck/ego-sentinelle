@@ -162,9 +162,9 @@ class TestComptes:
         assert "comptes=[\\x1b[2J\\x1b[31mroot\\x1b[0m\\x0d\\x0aALERTE" in texte
 
     def test_bidi_dans_un_compte_neutralise(self):
-        texte = rapport([alerte(comptes=("admin‮nimda",))])
+        texte = rapport([alerte(comptes=("admin\u202enimda",))])
 
-        assert "‮" not in texte
+        assert "\u202e" not in texte
         assert "comptes=[admin\\u202enimda]" in texte
 
     @pytest.mark.parametrize(

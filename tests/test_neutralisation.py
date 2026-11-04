@@ -27,14 +27,14 @@ class TestUnicodeInvisible:
     @pytest.mark.parametrize(
         ("caractere", "attendu"),
         [
-            ("‮", "\\u202e"),  # RLO : inverse l'affichage
-            ("‪", "\\u202a"),  # LRE
-            ("‬", "\\u202c"),  # PDF
-            ("⁦", "\\u2066"),  # LRI
-            ("⁩", "\\u2069"),  # PDI
-            ("‏", "\\u200f"),  # RLM
-            ("؜", "\\u061c"),  # ALM
-            ("​", "\\u200b"),  # espace sans chasse
+            ("\u202e", "\\u202e"),  # RLO : inverse l'affichage
+            ("\u202a", "\\u202a"),  # LRE
+            ("\u202c", "\\u202c"),  # PDF
+            ("\u2066", "\\u2066"),  # LRI
+            ("\u2069", "\\u2069"),  # PDI
+            ("\u200f", "\\u200f"),  # RLM
+            ("\u061c", "\\u061c"),  # ALM
+            ("\u200b", "\\u200b"),  # espace sans chasse
             (" ", "\\u2028"),  # séparateur de ligne
             (" ", "\\u2029"),  # séparateur de paragraphe
             ("\ud800", "\\ud800"),  # demi-codet isolé
@@ -52,7 +52,7 @@ class TestCaracteresTrompeurs:
     @pytest.mark.parametrize(
         ("caractere", "attendu"),
         [
-            ("", "\\ue000"),  # usage privé (Co)
+            ("\ue000", "\\ue000"),  # usage privé (Co)
             (" ", "\\xa0"),  # espace insécable (Zs)
             (" ", "\\u2003"),  # espace cadratin (Zs)
             (" ", "\\u202f"),  # espace fine insécable (Zs)
@@ -77,7 +77,7 @@ class TestCaracteresTrompeurs:
         ids=["tag-langue", "tag-A", "Co-plan-15"],
     )
     def test_hors_bmp_sur_huit_chiffres(self, caractere, attendu):
-        # Sur 4 chiffres, « 1 » se lirait «  » suivi de « 1 ».
+        # Sur 4 chiffres, « \ue0001 » se lirait « \ue000 » suivi de « 1 ».
         assert neutraliser(f"a{caractere}1") == f"a{attendu}1"
 
     def test_compte_d_apparence_vide_rendu_visible(self):

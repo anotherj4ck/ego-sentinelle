@@ -450,6 +450,28 @@ que la ligne affichée peut être plus longue. Elle reste bornée.
 Les noms de comptes sont insérés dans les répliques comme du texte : ils ne sont
 jamais interprétés comme un modèle.
 
+### Sources sans caractère invisible
+
+Un caractère bidirectionnel (comme U+202E) ou invisible peut faire lire à un
+relecteur autre chose que ce que Python exécute. Un test de garde,
+`tests/test_sources_propres.py`, échoue si l'un des fichiers `.py`, `.json`, `.md`,
+`.ps1`, `.toml` ou `.cfg` du dépôt en contient un. Il vérifie les fichiers suivis par
+git, et aussi les nouveaux fichiers non ignorés, avant leur premier commit. Il
+signale :
+- les caractères de contrôle, sauf le saut de ligne, le retour chariot et la
+  tabulation ;
+- les caractères de format invisibles, dont les contrôles bidirectionnels ;
+- les caractères d'usage privé et les demi-codets isolés.
+
+Chaque caractère trouvé est signalé avec sa position : `fichier:ligne:colonne
+U+XXXX`. Les tests qui ont besoin de ces caractères les écrivent en séquence
+d'échappement Python, jamais en caractère brut. Deux exceptions sont nommées dans le
+test :
+- le BOM en tête des scripts `.ps1`, sans lequel Windows PowerShell 5.1 lirait le
+  script dans la page de code ANSI ;
+- une liste blanche de fichiers de `tests/donnees/`, nommés un par un, qui doivent
+  contenir de vrais caractères piégés. Elle est vide pour l'instant.
+
 ### Ne publiez jamais un export réel
 
 Un export, ou un rapport tiré d'un export réel, contient :
