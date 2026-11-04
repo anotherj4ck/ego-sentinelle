@@ -268,6 +268,14 @@ class TestSecurite:
         assert "b" not in Analyse(sortie).balises
         assert RLO not in sortie
 
+    def test_ip_neutralisee_une_seule_fois(self):
+        # Titre du bloc, réplique et registre : une barre de la zone devient
+        # deux, jamais quatre.
+        visible = texte(rendre([alerte(f"fe80::1%a{BARRE}c", comptes=("root",))]))
+
+        assert visible.count(f"fe80::1%a{BARRE * 2}c") == 3
+        assert BARRE * 3 not in visible
+
     def test_replique_avec_balise_affichee_litteralement(self):
         modeles = replace(MODELES, entete=("<b>gras</b> & co",))
 

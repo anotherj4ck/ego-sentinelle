@@ -75,9 +75,13 @@ def graine(alertes: Sequence[Alerte], rejets: Sequence[LigneRejetee]) -> int:
 
 
 def valeurs_alerte(alerte: Alerte) -> dict[str, str]:
-    """Champs d'une alerte pour les répliques ; les comptes sont déjà neutralisés."""
+    """Champs d'une alerte pour les répliques, IP et comptes déjà neutralisés.
+
+    str(ip) peut porter un identifiant de zone arbitraire (fe80::1%<zone>) :
+    neutralisé ici, une fois pour toutes, comme les comptes.
+    """
     return {
-        "ip": str(alerte.ip),
+        "ip": neutraliser(str(alerte.ip)),
         "nombre": str(alerte.pic),
         "duree": formater_duree(alerte.fin_pic - alerte.debut_pic),
         "comptes": formater_comptes(alerte.comptes),

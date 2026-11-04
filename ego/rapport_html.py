@@ -202,19 +202,15 @@ def _bloc_alerte(
     rang: int,
     communs: Mapping[str, str],
 ) -> list[str]:
-    # str(ip) peut porter un identifiant de zone arbitraire (fe80::1%<zone>) :
-    # neutralisé comme un nom de compte.
-    valeurs = {
-        **communs,
-        **valeurs_alerte(alerte),
-        "ip": neutraliser(str(alerte.ip)),
-    }
+    valeurs = {**communs, **valeurs_alerte(alerte)}  # IP et comptes neutralisés
     origine = "locale" if alerte.est_locale else "externe"
     fenetre_du_pic = (
         _periode((alerte.debut_pic, alerte.fin_pic))
         + f" ({formater_duree(alerte.fin_pic - alerte.debut_pic)})"
     )
     comptes = _replique_html(CHAMP_SEUL, 0, {"valeur": valeurs["comptes"]})
+    # Titre : l'IP brute, que _texte neutralise une fois. Jamais valeurs["ip"],
+    # déjà neutralisée : neutraliser() n'est pas idempotent.
     return [
         f'<article class="alerte {origine}">',
         f"<h3>{_texte(str(alerte.ip))}</h3>",
