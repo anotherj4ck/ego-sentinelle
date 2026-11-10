@@ -11,5 +11,8 @@ htmlcov/
 # Rapports écrits par --sortie : ils recopient les comptes et les IP de l'export.
 *.txt
 !requirements*.txt
+# Rapports écrits par --html : ils recopient les comptes et les IP de l'export.
+*.html
+!docs/maquette/*.html
 # Journaux Windows exportés depuis l'Observateur d'événements.
 *.evtx

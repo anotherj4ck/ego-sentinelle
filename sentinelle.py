@@ -5,8 +5,8 @@ import io
 import os
 import re
 import sys
-from collections.abc import Sequence
-from datetime import timedelta
+from collections.abc import Callable, Sequence
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ego._redaction import REJETS_MAX_AFFICHES
@@ -14,6 +14,7 @@ from ego.detection import FENETRE, SEUIL_ECHECS, detecter
 from ego.lecture import (
     MARGE_CALCUL,
     ErreurFormat,
+    Evenement,
     LigneRejetee,
     ResultatLecture,
     lire_export,
@@ -21,6 +22,7 @@ from ego.lecture import (
 from ego.modeles import ErreurModeles, Modeles, charger_modeles
 from ego.neutralisation import neutraliser
 from ego.rapport import rediger
+from ego.rapport_html import rediger_html
 
 # À côté du script, et non dans le dossier courant : sentinelle.py doit
 # fonctionner lancé depuis n'importe où.
@@ -47,11 +49,23 @@ class _Echec(Exception):
     """Erreur signalée à l'utilisateur par un message, jamais par un traceback."""
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Point d'entrée. Codes : 0 aucune alerte, 1 alertes, 2 erreur, 130 Ctrl+C."""
+def _maintenant() -> datetime:
+    return datetime.now().astimezone()
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    horloge: Callable[[], datetime] = _maintenant,
+) -> int:
+    """Point d'entrée. Codes : 0 aucune alerte, 1 alertes, 2 erreur, 130 Ctrl+C.
+
+    horloge donne l'instant de génération du rapport HTML (injectable pour les
+    tests) ; elle n'est appelée qu'avec --html.
+    """
     _sorties_en_utf8()
     try:
-        return _executer(_analyseur().parse_args(argv))
+        return _executer(_analyseur().parse_args(argv), horloge)
     except _Echec as echec:
         print(f"sentinelle.py : erreur : {echec}", file=sys.stderr)
         return CODE_ERREUR
@@ -72,20 +86,44 @@ def _sorties_en_utf8() -> None:
             flux.reconfigure(encoding="utf-8", errors=erreurs)
 
 
-def _executer(arguments: argparse.Namespace) -> int:
+def _executer(arguments: argparse.Namespace, horloge: Callable[[], datetime]) -> int:
     seuil = arguments.seuil
     fenetre = arguments.fenetre * UNE_MINUTE
     lecture = _lire_export(arguments.export)
     modeles = _charger_modeles(arguments.modeles)
-    if arguments.sortie is not None:
-        _proteger(arguments.sortie, arguments.export, arguments.modeles)
+    _proteger_les_sorties(arguments)
     try:
         alertes = detecter(lecture.evenements, seuil, fenetre)
     except ValueError as erreur:
         raise _Echec(f"paramètres invalides : {erreur}") from erreur
     rapport = rediger(alertes, lecture.rejets, seuil, fenetre, modeles)
-    _publier(rapport, lecture.rejets, arguments.sortie)
+    # Tout est encodé avant la première écriture : en cas d'échec, rien n'est
+    # écrit nulle part. Le HTML est écrit en premier : s'il échoue, ni rejets ni
+    # rapport ne sont sortis, et la seule ligne de stderr est l'erreur.
+    contenu = _encoder(rapport)
+    if arguments.html is not None:
+        evenements = lecture.evenements
+        document = rediger_html(
+            alertes,
+            lecture.rejets,
+            seuil,
+            fenetre,
+            modeles,
+            total_echecs=len(evenements),
+            origines=len({e.ip for e in evenements}),
+            periode=_periode(evenements),
+            source=arguments.export,
+            genere_le=horloge(),
+        )
+        _ecrire_fichier(arguments.html, _encoder(document))
+    _publier(rapport, contenu, lecture.rejets, arguments.sortie)
     return CODE_ALERTES if alertes else CODE_AUCUNE_ALERTE
+
+
+def _periode(evenements: Sequence[Evenement]) -> tuple[datetime, datetime] | None:
+    """Du plus ancien au plus récent événement : l'export n'est pas forcément trié."""
+    instants = [e.horodatage for e in evenements]
+    return (min(instants), max(instants)) if instants else None
 
 
 def _lire_export(chemin: Path) -> ResultatLecture:
@@ -123,25 +161,50 @@ def _affichable(chemin: Path) -> str:
     return neutraliser(chemin.as_posix())
 
 
-def _proteger(sortie: Path, export: Path, modeles: Path) -> None:
-    """Refuse une sortie qui écraserait l'export ou les répliques écrites à la main."""
+def _proteger_les_sorties(arguments: argparse.Namespace) -> None:
+    sorties = (("--sortie", arguments.sortie), ("--html", arguments.html))
+    for option, cible in sorties:
+        if cible is not None:
+            _proteger(option, cible, arguments.export, arguments.modeles)
+    if (
+        arguments.sortie is not None
+        and arguments.html is not None
+        and _meme_fichier(arguments.html, arguments.sortie)
+    ):
+        raise _Echec(
+            "--html et --sortie désignent le même fichier :"
+            f" {_affichable(arguments.html)}"
+        )
+
+
+def _proteger(option: str, cible: Path, export: Path, modeles: Path) -> None:
+    """Refuse une cible qui écraserait l'export ou les répliques écrites à la main."""
     for chemin, nom in ((export, "l'export"), (modeles, "le fichier de modèles")):
-        if _meme_fichier(sortie, chemin):
-            raise _Echec(f"--sortie écraserait {nom} : {_affichable(sortie)}")
+        if _meme_fichier(cible, chemin):
+            raise _Echec(f"{option} écraserait {nom} : {_affichable(cible)}")
 
 
 def _meme_fichier(un: Path, autre: Path) -> bool:
     # samefile compare les fichiers eux-mêmes, quelle que soit la graphie
-    # (« .. », casse sous Windows, lien). Une sortie absente lève OSError :
-    # elle ne peut pas être `autre`, qui vient d'être lu.
+    # (« .. », casse sous Windows, lien). Si l'un des deux n'existe pas encore
+    # (--html et --sortie avant leur première écriture), on compare les chemins
+    # normalisés : abspath retire le point ou l'espace final que Windows ignore
+    # (« a.html. » est « a.html »), realpath suit les liens, normcase ignore la
+    # casse sous Windows seulement.
     try:
         return un.samefile(autre)
     except OSError:
-        return False
+        return _chemin_normalise(un) == _chemin_normalise(autre)
 
 
-def _publier(rapport: str, rejets: Sequence[LigneRejetee], sortie: Path | None) -> None:
-    contenu = _encoder(rapport)
+def _chemin_normalise(chemin: Path) -> str:
+    return os.path.normcase(os.path.realpath(os.path.abspath(chemin)))
+
+
+def _publier(
+    rapport: str, contenu: bytes, rejets: Sequence[LigneRejetee], sortie: Path | None
+) -> None:
+    """contenu : le rapport déjà encodé par _encoder, écrit tel quel dans sortie."""
     if sortie is not None:
         _ecrire_fichier(sortie, contenu)
     # Rejets avant le rapport sur stdout : si personne ne lit stdout (pipe
@@ -163,12 +226,15 @@ def _encoder(rapport: str) -> bytes:
         ) from erreur
 
 
-def _ecrire_fichier(sortie: Path, contenu: bytes) -> None:
+def _ecrire_fichier(cible: Path, contenu: bytes) -> None:
     try:
-        sortie.write_bytes(contenu)
+        cible.write_bytes(contenu)
     except OSError as erreur:
+        # Sous Windows, ouvrir un dossier en écriture donne « Permission denied » :
+        # la vraie raison est plus claire.
+        raison = "c'est un dossier" if cible.is_dir() else erreur.strerror
         raise _Echec(
-            f"écriture impossible : {_affichable(sortie)} ({erreur.strerror})"
+            f"écriture impossible : {_affichable(cible)} ({raison})"
         ) from erreur
 
 
@@ -235,6 +301,12 @@ def _analyseur() -> argparse.ArgumentParser:
         type=Path,
         metavar="FICHIER",
         help="écrire le rapport dans ce fichier (UTF-8) plutôt que sur la sortie",
+    )
+    analyseur.add_argument(
+        "--html",
+        type=Path,
+        metavar="FICHIER",
+        help="écrire aussi le rapport HTML dans ce fichier (UTF-8)",
     )
     analyseur.add_argument(
         "--seuil",

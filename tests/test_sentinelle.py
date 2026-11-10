@@ -10,7 +10,8 @@ import json
 import os
 import subprocess
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from ego.detection import detecter
 from ego.lecture import lire_export
 from ego.modeles import charger_modeles
 from ego.rapport import rediger
+from ego.rapport_html import CSP, rediger_html
 
 RACINE = Path(__file__).parent.parent
 EGO = RACINE / "modeles" / "ego.json"
@@ -35,23 +37,23 @@ CLES_TEXTE = (
 )
 
 
-def appeler(*arguments: object) -> int | str:
-    """Code de sortie d'un appel à main().
+def appeler(*arguments: object, **options: object) -> int | str:
+    """Code de sortie d'un appel à main() ; options : arguments nommés de main().
 
     Une exception non rattrapée (un traceback pour l'utilisateur) devient un
     code « exception … » : les tests échouent alors par assertion.
     """
     try:
-        return sentinelle.main([str(a) for a in arguments])
+        return sentinelle.main([str(a) for a in arguments], **options)
     except SystemExit as fin:  # argparse
         return fin.code
     except (Exception, KeyboardInterrupt) as erreur:  # noqa: BLE001 - voir ci-dessus
         return f"exception {type(erreur).__name__}: {erreur}"
 
 
-def lancer(capsys, *arguments: object) -> tuple[int | str, str, str]:
+def lancer(capsys, *arguments: object, **options: object) -> tuple[int | str, str, str]:
     """Code de sortie, stdout et stderr d'un appel à main()."""
-    code = appeler(*arguments)
+    code = appeler(*arguments, **options)
     sortie = capsys.readouterr()
     return code, sortie.out, sortie.err
 
@@ -569,7 +571,7 @@ PIEGE_NEUTRALISE = "piege\\x1b]0;pwn\\x07\\u202e.csv"
 
 
 class TestCheminsNeutralises:
-    @pytest.mark.parametrize("option", ["export", "--modeles", "--sortie"])
+    @pytest.mark.parametrize("option", ["export", "--modeles", "--sortie", "--html"])
     def test_chemin_piege_neutralise_dans_le_message(
         self, capsys, donnees, tmp_path, option
     ):
@@ -580,7 +582,7 @@ class TestCheminsNeutralises:
         elif option == "--modeles":
             modeles = piege
         else:
-            options = ["--sortie", piege]
+            options = [option, piege]
 
         code, _, erreurs = lancer(capsys, export, "--modeles", modeles, *options)
 
@@ -600,3 +602,427 @@ class TestInterruption:
         code, sortie, erreurs = lancer(capsys, donnees / "export_attaque.csv")
 
         assert (code, sortie, erreurs) == (130, "", "")
+
+
+# --html : l'horloge est injectée, le rapport attendu se calcule donc exactement.
+PLUS_UNE = timezone(timedelta(hours=1))
+GENERE_LE = datetime(2026, 11, 3, 10, 0, tzinfo=PLUS_UNE)
+WINDOWS = os.name == "nt"
+DEMI_CODET = chr(0xD800)
+
+
+def horloge_fixe() -> datetime:
+    return GENERE_LE
+
+
+def html_attendu(
+    export: Path,
+    *,
+    total_echecs: int,
+    origines: int,
+    periode: tuple[datetime, datetime] | None,
+    seuil: int = 5,
+    fenetre: timedelta = FENETRE,
+) -> bytes:
+    """Rapport HTML attendu. L'en-tête est donné en clair, pas recalculé comme la CLI."""
+    lecture = lire_export(export)
+    alertes = detecter(lecture.evenements, seuil, fenetre)
+    document = rediger_html(
+        alertes,
+        lecture.rejets,
+        seuil,
+        fenetre,
+        charger_modeles(EGO),
+        total_echecs=total_echecs,
+        origines=origines,
+        periode=periode,
+        source=export,
+        genere_le=GENERE_LE,
+    )
+    return document.encode("utf-8")
+
+
+class Structure(HTMLParser):
+    """Lecture par html.parser : balises <meta>, et imbrication vérifiée."""
+
+    VIDES = frozenset({"meta"})  # seule balise vide du rapport (<path/> se ferme seul)
+
+    def __init__(self, document: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.pile: list[str] = []
+        self.erreurs: list[str] = []
+        self.metas: list[dict[str, str | None]] = []
+        self.feed(document)
+        self.close()
+
+    def handle_starttag(self, balise, attributs):
+        if balise == "meta":
+            self.metas.append(dict(attributs))
+        if balise not in self.VIDES:
+            self.pile.append(balise)
+
+    def handle_endtag(self, balise):
+        if not self.pile or self.pile.pop() != balise:
+            self.erreurs.append(f"</{balise}> inattendue")
+
+
+ATTAQUE = {
+    "total_echecs": 14,
+    "origines": 3,  # 203.0.113.66, 192.0.2.20, ::1
+    "periode": (
+        datetime(2026, 11, 3, 2, 14, 5, 100000, tzinfo=PLUS_UNE),
+        datetime(2026, 11, 3, 9, 1, 30, tzinfo=PLUS_UNE),
+    ),
+}
+
+
+class TestRapportHtml:
+    def test_bout_en_bout_export_d_attaque(self, donnees, tmp_path):
+        export = donnees / "export_attaque.csv"
+        cible = tmp_path / "rapport.html"
+
+        resultat = executer(export, "--html", cible, cwd=tmp_path, env=CP1252)
+
+        # Horloge réelle : un genere_le sans fuseau lèverait ValueError (traceback).
+        assert resultat.returncode == 1
+        assert sans_cr(resultat.stderr) == "ligne 16 rejetée : IP absente : -\n".encode(
+            "utf-8"
+        )
+        assert sans_cr(resultat.stdout) == rapport_attendu(export).encode("utf-8")
+        assert cible.is_file()
+        octets = cible.read_bytes()
+        assert not octets.startswith(b"\xef\xbb\xbf")  # UTF-8 sans BOM
+        document = octets.decode("utf-8")
+        structure = Structure(document)
+        assert (structure.erreurs, structure.pile) == ([], [])
+        assert {"http-equiv": "Content-Security-Policy", "content": CSP} in (
+            structure.metas
+        )
+        assert '<body class="etat-alerte">' in document
+
+    @pytest.mark.parametrize(
+        ("options", "seuil", "fenetre"),
+        [([], 5, FENETRE), (["--seuil", 6, "--fenetre", 20], 6, timedelta(minutes=20))],
+        ids=["defaut", "seuil-fenetre"],
+    )
+    def test_contenu_egal_a_rediger_html(
+        self, capsys, donnees, tmp_path, options, seuil, fenetre
+    ):
+        export = donnees / "export_attaque.csv"
+        cible = tmp_path / "rapport.html"
+
+        code, _, _ = lancer(
+            capsys, export, *options, "--html", cible, horloge=horloge_fixe
+        )
+
+        assert code == 1
+        assert cible.is_file()
+        assert cible.read_bytes() == html_attendu(
+            export, **ATTAQUE, seuil=seuil, fenetre=fenetre
+        )
+
+    def test_export_valide_etat_silence(self, capsys, donnees, tmp_path):
+        export = donnees / "export_valide.csv"
+        cible = tmp_path / "rapport.html"
+
+        code, _, _ = lancer(capsys, export, "--html", cible, horloge=horloge_fixe)
+
+        assert code == 0
+        assert cible.is_file()
+        octets = cible.read_bytes()
+        assert octets == html_attendu(
+            export,
+            total_echecs=6,
+            origines=4,  # 192.0.2.10, 203.0.113.7, ::1, 127.0.0.1
+            periode=(
+                datetime(2026, 11, 3, 8, 12, 45, 123456, tzinfo=PLUS_UNE),
+                datetime(2026, 11, 3, 9, 30, tzinfo=PLUS_UNE),
+            ),
+        )
+        assert '<body class="etat-silence">' in octets.decode("utf-8")
+        assert "SILENCE · CODE 0" in octets.decode("utf-8")
+
+    def test_periode_du_plus_ancien_au_plus_recent_et_source_sans_chemin(
+        self, capsys, tmp_path, ecrire_export
+    ):
+        # Lignes non triées : la première et la dernière ne bornent pas la période.
+        export = ecrire_export(
+            b"Date,Compte,IP\n"
+            b'"2026-11-03T09:00:00+01:00","a","192.0.2.1"\n'
+            b'"2026-11-03T07:00:00Z","b","192.0.2.2"\n'
+            b'"2026-11-03T10:30:00+01:00","c","192.0.2.1"\n'
+            b'"2026-11-03T09:15:00+01:00","d","192.0.2.1"\n',
+            nom="non_trie.csv",
+        )
+        cible = tmp_path / "rapport.html"
+
+        code, _, _ = lancer(capsys, export, "--html", cible, horloge=horloge_fixe)
+
+        assert code == 0
+        assert cible.is_file()
+        octets = cible.read_bytes()
+        assert octets == html_attendu(
+            export,
+            total_echecs=4,
+            origines=2,
+            periode=(
+                datetime(2026, 11, 3, 7, 0, tzinfo=timezone.utc),
+                datetime(2026, 11, 3, 10, 30, tzinfo=PLUS_UNE),
+            ),
+        )
+        document = octets.decode("utf-8")
+        assert "non_trie.csv" in document
+        assert tmp_path.name not in document  # jamais le chemin du dossier
+
+    def test_aucun_evenement_periode_absente(self, capsys, tmp_path, ecrire_export):
+        export = ecrire_export(b'Date,Compte,IP\n"2026-11-03T08:00:00Z","bob","-"\n')
+        cible = tmp_path / "rapport.html"
+
+        code, _, _ = lancer(capsys, export, "--html", cible, horloge=horloge_fixe)
+
+        assert code == 0
+        assert cible.is_file()
+        assert cible.read_bytes() == html_attendu(
+            export, total_echecs=0, origines=0, periode=None
+        )
+
+    @pytest.mark.parametrize(
+        "nom", ["export_attaque.csv", "export_valide.csv", "export_malforme.csv"]
+    )
+    @pytest.mark.parametrize("avec_sortie", [False, True], ids=["stdout", "sortie"])
+    def test_memes_sorties_avec_et_sans_html(
+        self, capsys, donnees, tmp_path, nom, avec_sortie
+    ):
+        export = donnees / nom
+
+        def sortie(nom_fichier: str) -> list[object]:
+            return ["--sortie", tmp_path / nom_fichier] if avec_sortie else []
+
+        sans = lancer(capsys, export, *sortie("sans.txt"))
+        avec = lancer(
+            capsys,
+            export,
+            *sortie("avec.txt"),
+            "--html",
+            tmp_path / "rapport.html",
+            horloge=horloge_fixe,
+        )
+
+        assert avec == sans
+        assert (tmp_path / "rapport.html").is_file()
+        if avec_sortie:
+            assert (tmp_path / "avec.txt").read_bytes() == (
+                tmp_path / "sans.txt"
+            ).read_bytes()
+
+    def test_horloge_appelee_seulement_avec_html(self, capsys, donnees, tmp_path):
+        export = donnees / "export_attaque.csv"
+        appels = []
+
+        def horloge() -> datetime:
+            appels.append(GENERE_LE)
+            return GENERE_LE
+
+        sans, _, _ = lancer(capsys, export, horloge=horloge)
+        assert (sans, appels) == (1, [])
+
+        avec, _, _ = lancer(
+            capsys, export, "--html", tmp_path / "rapport.html", horloge=horloge
+        )
+        assert (avec, appels) == (1, [GENERE_LE])
+
+    @pytest.mark.parametrize("option", ["--sortie", "--html"])
+    def test_fichier_existant_ecrase_sans_confirmation(
+        self, capsys, donnees, tmp_path, option
+    ):
+        export = donnees / "export_attaque.csv"
+        cible = tmp_path / "ancien"
+        cible.write_bytes(b"ancien contenu")
+
+        code, _, _ = lancer(capsys, export, option, cible, horloge=horloge_fixe)
+
+        assert code == 1
+        attendu = (
+            rapport_attendu(export).encode("utf-8")
+            if option == "--sortie"
+            else html_attendu(export, **ATTAQUE)
+        )
+        assert cible.read_bytes() == attendu
+
+
+class TestHtmlProtege:
+    @pytest.mark.parametrize(
+        ("protege", "attendu"),
+        [("export", "l'export"), ("modeles", "le fichier de modèles")],
+    )
+    def test_html_vers_un_fichier_protege_refuse_sans_ecraser(
+        self, capsys, donnees, tmp_path, protege, attendu
+    ):
+        export = tmp_path / "export.csv"
+        export.write_bytes((donnees / "export_attaque.csv").read_bytes())
+        modeles = tmp_path / "ego.json"
+        modeles.write_bytes(EGO.read_bytes())  # copie : le vrai ego.json reste intact
+        cible = export if protege == "export" else modeles
+        avant = cible.read_bytes()
+        (tmp_path / "sous").mkdir()
+        autre_graphie = tmp_path / "sous" / ".." / cible.name
+
+        code, sortie, erreurs = lancer(
+            capsys,
+            export,
+            "--modeles",
+            modeles,
+            "--html",
+            autre_graphie,
+            horloge=horloge_fixe,
+        )
+
+        assert (code, sortie) == (2, "")
+        assert cible.read_bytes() == avant
+        assert erreurs == (
+            f"sentinelle.py : erreur : --html écraserait {attendu} :"
+            f" {autre_graphie.as_posix()}\n"
+        )
+
+    @pytest.mark.parametrize("existe", [False, True], ids=["absent", "existant"])
+    @pytest.mark.parametrize(
+        ("cas", "graphie"),
+        [
+            ("identique", "rapport.html"),
+            ("detour", "sous/../rapport.html"),
+            # Mêmes fichiers sous Windows seulement : Linux distingue ces noms.
+            ("casse", "RAPPORT.HTML"),
+            ("point-final", "rapport.html."),
+        ],
+    )
+    def test_html_et_sortie_sur_le_meme_fichier_refuses(
+        self, capsys, donnees, tmp_path, cas, graphie, existe
+    ):
+        (tmp_path / "sous").mkdir()
+        sortie = tmp_path / "rapport.html"
+        if existe:
+            sortie.write_bytes(b"ancien contenu")
+        html = tmp_path / graphie
+
+        code, stdout, erreurs = lancer(
+            capsys,
+            donnees / "export_attaque.csv",
+            "--sortie",
+            sortie,
+            "--html",
+            html,
+            horloge=horloge_fixe,
+        )
+
+        if cas in ("casse", "point-final") and not WINDOWS:
+            assert code == 1  # deux fichiers distincts, tous deux écrits
+            return
+        assert (code, stdout) == (2, "")
+        assert erreurs == (
+            "sentinelle.py : erreur : --html et --sortie désignent le même fichier :"
+            f" {html.as_posix()}\n"
+        )
+        restants = sorted(p.name for p in tmp_path.iterdir())
+        assert restants == (["rapport.html", "sous"] if existe else ["sous"])
+        if existe:
+            assert sortie.read_bytes() == b"ancien contenu"
+
+
+class TestHtmlErreurs:
+    @pytest.mark.parametrize("avec_sortie", [False, True], ids=["stdout", "sortie"])
+    def test_dossier_absent_message_clair_avant_toute_autre_sortie(
+        self, capsys, donnees, tmp_path, avec_sortie
+    ):
+        texte = tmp_path / "rapport.txt"
+        html = tmp_path / "dossier-absent" / "rapport.html"
+        options = ["--sortie", texte] if avec_sortie else []
+
+        code, sortie, erreurs = lancer(
+            capsys,
+            donnees / "export_attaque.csv",
+            *options,
+            "--html",
+            html,
+            horloge=horloge_fixe,
+        )
+
+        assert (code, sortie) == (2, "")
+        assert erreurs.startswith(
+            f"sentinelle.py : erreur : écriture impossible : {html.as_posix()} ("
+        )
+        assert erreurs.count("\n") == 1  # ni ligne rejetée, ni traceback
+        assert not texte.exists()
+
+    @pytest.mark.parametrize("option", ["--sortie", "--html"])
+    def test_cible_dossier_existant_message_clair(
+        self, capsys, donnees, tmp_path, option
+    ):
+        dossier = tmp_path / "dossier"
+        dossier.mkdir()
+
+        code, sortie, erreurs = lancer(
+            capsys,
+            donnees / "export_attaque.csv",
+            option,
+            dossier,
+            horloge=horloge_fixe,
+        )
+
+        assert (code, sortie) == (2, "")
+        assert erreurs == (
+            "sentinelle.py : erreur : écriture impossible :"
+            f" {dossier.as_posix()} (c'est un dossier)\n"
+        )
+        assert list(dossier.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        "cas",
+        [
+            "export-absent",
+            "modeles-invalides",
+            "detection",
+            "encodage-texte",
+            "encodage-html",
+        ],
+    )
+    def test_aucun_fichier_ecrit_si_une_etape_echoue(
+        self, capsys, donnees, tmp_path, monkeypatch, cas
+    ):
+        export, modeles = donnees / "export_attaque.csv", EGO
+        if cas == "export-absent":
+            export = tmp_path / "absent.csv"
+        elif cas == "modeles-invalides":
+            modeles = tmp_path / "ego.json"
+            modeles.write_text('{"entete": [', encoding="utf-8")
+        elif cas == "detection":
+
+            def refuser(*_args):
+                raise ValueError("seuil invalide : 0 (minimum 1)")
+
+            monkeypatch.setattr(sentinelle, "detecter", refuser)
+        elif cas == "encodage-texte":
+            monkeypatch.setattr(sentinelle, "rediger", lambda *_a, **_k: DEMI_CODET)
+        else:
+            # raising=False : l'attribut n'existe pas avant l'implémentation ; un
+            # nom erroné ferait échouer le test (code 1 au lieu de 2).
+            monkeypatch.setattr(
+                sentinelle, "rediger_html", lambda *_a, **_k: DEMI_CODET, raising=False
+            )
+        texte, html = tmp_path / "rapport.txt", tmp_path / "rapport.html"
+
+        code, sortie, erreurs = lancer(
+            capsys,
+            export,
+            "--modeles",
+            modeles,
+            "--sortie",
+            texte,
+            "--html",
+            html,
+            horloge=horloge_fixe,
+        )
+
+        assert (code, sortie) == (2, "")
+        assert erreurs.startswith("sentinelle.py : erreur : ")
+        assert erreurs.count("\n") == 1
+        assert (texte.exists(), html.exists()) == (False, False)

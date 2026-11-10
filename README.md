@@ -24,6 +24,7 @@ python sentinelle.py .\echecs.csv
 ```
 
 Le détail suit : [prérequis](#prérequis), [utilisation](#utilisation),
+[rapport HTML](#rapport-html),
 [pièges de PowerShell 5.1](#pièges-de-windows-powershell-51),
 [événements de test](#générer-des-événements-4625-de-test-sur-une-vm),
 [répliques](#personnaliser-les-répliques), [tests](#lancer-les-tests),
@@ -49,7 +50,8 @@ Deux outils, deux étapes :
    - le nombre de lignes inexploitables, qui sont écartées et listées à part.
 
 L'outil ne fait que **lire et signaler**. Il ne bloque aucune adresse, ne modifie
-ni le journal ni le pare-feu, et n'écrit rien d'autre que le rapport.
+ni le journal ni le pare-feu, et n'écrit rien d'autre que ses rapports : le rapport
+texte, et sur demande un [rapport HTML](#rapport-html).
 
 Exemple sur les données fictives de `tests/donnees/export_attaque.csv` :
 
@@ -143,6 +145,7 @@ avant de rediriger la sortie avec `>` ou `|`.
 |---|---|---|
 | `export` | Le CSV produit par `export-4625.ps1`. | (obligatoire) |
 | `--sortie FICHIER` | Écrit le rapport dans ce fichier au lieu de la console. | console |
+| `--html FICHIER` | Écrit **aussi** le rapport HTML dans ce fichier : voir [Rapport HTML](#rapport-html). | aucun |
 | `--seuil N` | Nombre d'échecs, dans une même fenêtre, à partir duquel une IP est signalée. Entier de 1 à 999 999 999. | 5 |
 | `--fenetre MINUTES` | Durée de la fenêtre glissante, en minutes entières, de 1 à 1440 (24 h). | 10 |
 | `--modeles CHEMIN` | Fichier des répliques d'Ego. | `modeles/ego.json`, à côté du script |
@@ -157,7 +160,7 @@ Les options numériques n'acceptent que des chiffres de 0 à 9 : `+5`, `1_000` o
 |---|---|
 | 0 | Aucune alerte. |
 | 1 | Au moins une alerte, externe ou locale. |
-| 2 | Erreur, signalée sur stderr sans traceback. Exemples : export ou modèles introuvables ou invalides, option invalide (avec le rappel de l'usage), écriture impossible, `--sortie` qui écraserait un fichier protégé. Les messages sont en français pour les erreurs de fichier et de valeur ; ceux d'argparse (argument manquant ou inconnu, rappel de l'usage) restent en anglais. |
+| 2 | Erreur, signalée sur stderr sans traceback. Exemples : export ou modèles introuvables ou invalides, option invalide (avec le rappel de l'usage), écriture impossible, `--sortie` ou `--html` qui écraserait un fichier protégé, `--html` et `--sortie` sur le même fichier. Les messages sont en français pour les erreurs de fichier et de valeur ; ceux d'argparse (argument manquant ou inconnu, rappel de l'usage) restent en anglais. |
 | 130 | Interruption par Ctrl+C, sans message. |
 
 Avec `| Select-Object -First N`, c'est **PowerShell** qui coupe lui-même le processus
@@ -192,6 +195,76 @@ if ($LASTEXITCODE -eq 1) { Write-Warning "Ego a des choses à dire : voir rappor
   (`ego.json`), même désigné par un autre chemin (`.\sous\..\echecs.csv`, une casse
   différente…). Le programme s'arrête alors avec le code 2, sans rien écrire. Tout
   autre fichier existant est écrasé sans confirmation.
+
+## Rapport HTML
+
+```powershell
+python sentinelle.py .\echecs.csv --html .\rapport.html
+```
+
+`--html` **s'ajoute** au rapport texte, il ne le remplace pas. Le rapport texte sort
+comme d'habitude, sur la console ou dans le fichier de `--sortie`, et les codes de
+sortie ne changent pas. Les deux options se combinent :
+
+```powershell
+python sentinelle.py .\echecs.csv --sortie .\rapport.txt --html .\rapport.html
+```
+
+### Ce qu'il contient
+
+Un seul fichier, à ouvrir dans un navigateur, même hors connexion :
+- **l'en-tête** : nom du fichier analysé (jamais son chemin, qui contiendrait votre
+  nom d'utilisateur Windows), période couverte (du plus ancien au plus récent
+  événement lu), seuil et fenêtre, volume lu (échecs, adresses d'origine distinctes,
+  lignes rejetées), état (`ALERTE · CODE 1` ou `SILENCE · CODE 0`) et date de
+  génération ;
+- **les alertes**, avec les mêmes répliques d'Ego que le rapport texte (200 au plus) ;
+- **les lignes rejetées** (20 au plus) ;
+- **le registre** des noms de comptes tentés (50 au plus).
+
+La page s'adapte aux petits écrans. À l'impression, elle passe sur fond clair, sans
+décor. Le décor est masqué aux lecteurs d'écran, et les animations s'arrêtent si le
+système demande de réduire les mouvements.
+
+### Garanties
+
+Le rapport recopie des valeurs choisies par l'attaquant : il est construit pour
+qu'aucune ne puisse devenir du code.
+- **Aucun script** : ni balise `<script>`, ni attribut `on…`.
+- **Aucune ressource externe** : ni lien, ni image, ni police, ni feuille de style à
+  charger. Le style est dans le fichier, et les polices sont celles du système.
+- **Une politique de sécurité du contenu (CSP)** dans la page elle-même :
+  `default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`.
+  Le navigateur refuserait tout script et tout chargement, même injecté.
+- **Valeurs neutralisées puis échappées** : chaque valeur venue de l'export (adresses
+  IP, comptes, valeurs rejetées, nom du fichier) est d'abord neutralisée (voir
+  [Sécurité](#sécurité)), puis échappée pour HTML (`<`, `>`, `&`, guillemets).
+  Aucune valeur de l'export n'est placée dans un attribut.
+
+Ces garanties sont vérifiées par `tests/test_rapport_html.py`, qui analyse la
+structure du document produit.
+
+### Écriture du fichier
+
+- Le fichier est en **UTF-8 sans BOM**.
+- **Mêmes protections que `--sortie`** : `--html` refuse d'écraser l'export ou le
+  fichier de modèles, même désignés par un autre chemin. Il refuse aussi de viser le
+  même fichier que `--sortie`, même écrit autrement (`.\sous\..\rapport.html` ;
+  sous Windows, une casse différente ou un point final). Le programme s'arrête alors
+  avec le code 2, sans rien écrire.
+- **Tout autre fichier existant est écrasé sans confirmation**, comme avec
+  `--sortie`.
+- Si la lecture, la détection ou l'encodage échoue, **aucun fichier n'est écrit**,
+  même partiellement.
+- Limite connue : le rapport HTML est écrit en premier, et si l'écriture de
+  `--sortie` échoue ensuite (disque plein, accès refusé), il reste sur le disque
+  alors que le programme sort avec le code 2.
+
+> **Un rapport tiré d'un export réel ne se publie pas.** Il contient des adresses IP
+> et des noms de comptes réels, parfois un mot de passe tapé dans le champ du compte
+> (voir [Ne publiez jamais un export réel](#ne-publiez-jamais-un-export-réel)). Le
+> `.gitignore` ignore les fichiers `*.html`, sauf les maquettes fictives de
+> `docs/maquette/`.
 
 ## Pièges de Windows PowerShell 5.1
 
@@ -493,6 +566,7 @@ Le `.gitignore` du dépôt protège :
 |---|---|
 | `*.csv` | Tous les exports, sauf les exemples fictifs de `tests/donnees/`. |
 | `*.txt` | Les rapports écrits par `--sortie`, sauf `requirements*.txt`. |
+| `*.html` | Les rapports écrits par `--html`, sauf les maquettes fictives de `docs/maquette/`. |
 | `*.evtx` | Les journaux exportés depuis l'Observateur d'événements. |
 
 Les exemples de `tests/donnees/` sont versionnés. Un test de garde,
