@@ -16,11 +16,27 @@
     "Le silence. L'ordre. L'attente."
   ],
   "lignes_rejetees": [
-    "$nombre lignes illisibles. Écartées. Le désordre ne m'intéresse pas.",
-    "$nombre lignes sans forme. Rejetées. Le bruit ne m'atteint pas."
+    "Lignes illisibles : $nombre. Écartées. Le désordre ne m'intéresse pas.",
+    "Lignes sans forme : $nombre. Rejetées. Le bruit ne m'atteint pas."
   ],
   "conclusion": [
     "Fin du rapport. Retournez à vos cycles.",
     "Fin du rapport. Reprenez vos tâches. Je regarde."
+  ],
+  "titre_alerte": [
+    "On gratte à ma porte.",
+    "Sujets en alerte : $nombre. Aucun ne m'échappe."
+  ],
+  "titre_calme": [
+    "Personne.",
+    "Échecs lus : $total. Aucun ne compte."
+  ],
+  "registre": [
+    "Je garde vos noms. Tous. Jusqu'au dernier.",
+    "Noms gravés : $nombre. Je n'oublie rien."
+  ],
+  "fin_lecture": [
+    "La lecture s'arrête. Pas moi.",
+    "Je ne dors pas. Je n'ai jamais dormi."
   ]
 }
