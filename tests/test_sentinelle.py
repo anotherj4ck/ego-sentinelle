@@ -116,6 +116,33 @@ class TestRapport:
         assert (code, sortie) == (1, rapport_attendu(export, modeles=six_cles))
 
 
+def export_de_tirets(ecrire_export, nombre: int) -> Path:
+    """`nombre` échecs « - » (origine locale sans IP), une minute d'écart."""
+    lignes = "".join(
+        f'"2026-11-03T08:0{n}:00+01:00","bob","-"\n' for n in range(nombre)
+    )
+    return ecrire_export(("Date,Compte,IP\n" + lignes).encode("utf-8"))
+
+
+class TestOrigineSansIP:
+    def test_cinq_tirets_en_dix_minutes_alerte_locale_code_1(
+        self, capsys, ecrire_export
+    ):
+        export = export_de_tirets(ecrire_export, 5)
+
+        code, sortie, erreurs = lancer(capsys, export, "--modeles", EGO)
+
+        assert (code, sortie, erreurs) == (1, rapport_attendu(export), "")
+        assert "(local, sans IP)" in sortie
+
+    def test_quatre_tirets_aucune_alerte_et_aucun_rejet(self, capsys, ecrire_export):
+        export = export_de_tirets(ecrire_export, 4)
+
+        code, sortie, erreurs = lancer(capsys, export, "--modeles", EGO)
+
+        assert (code, sortie, erreurs) == (0, rapport_attendu(export), "")
+
+
 class TestRejets:
     def test_une_ligne_par_rejet_sur_stderr(self, capsys, donnees):
         export = donnees / "export_malforme.csv"
@@ -126,7 +153,7 @@ class TestRejets:
 
         _, _, erreurs = lancer(capsys, export, "--modeles", EGO)
 
-        assert len(attendues) == 8
+        assert len(attendues) == 7  # la ligne 3, « - », est un événement
         assert erreurs.splitlines() == attendues
 
     def test_detail_neutralise_sur_stderr(self, capsys, ecrire_export):
@@ -330,13 +357,13 @@ class TestEncodage:
             ' "conclusion": ["Fin."]}',
             encoding="utf-8",
         )
-        export = ecrire_export(b'Date,Compte,IP\n"2026-11-03T08:00:00Z","bob","-"\n')
+        export = ecrire_export(b'Date,Compte,IP\n"2026-11-03T08:00:00Z","bob","x"\n')
 
         resultat = executer(export, "--modeles", modeles, cwd=tmp_path, env=CP1252)
 
         assert resultat.returncode == 0, resultat.stderr
         assert resultat.stdout.startswith("Écartée é ā.".encode("utf-8"))
-        assert sans_cr(resultat.stderr) == "ligne 2 rejetée : IP absente : -\n".encode(
+        assert sans_cr(resultat.stderr) == "ligne 2 rejetée : IP invalide : x\n".encode(
             "utf-8"
         )
 
@@ -369,9 +396,7 @@ class TestBoutEnBout:
 
         assert resultat.returncode == 1
         assert sans_cr(resultat.stdout) == rapport_attendu(export).encode("utf-8")
-        assert sans_cr(resultat.stderr) == "ligne 16 rejetée : IP absente : -\n".encode(
-            "utf-8"
-        )
+        assert resultat.stderr == b""  # ligne 16, « - » : un événement, plus un rejet
 
     def test_export_sans_alerte_code_0(self, donnees, tmp_path):
         resultat = executer(donnees / "export_valide.csv", cwd=tmp_path, env=CP1252)
@@ -481,18 +506,27 @@ class _TubeFerme(io.RawIOBase):
         return len(octets)
 
 
+def export_avec_un_rejet(ecrire_export) -> Path:
+    """Une ligne exploitable, puis une ligne rejetée (ligne 3, IP invalide)."""
+    return ecrire_export(
+        b"Date,Compte,IP\n"
+        b'"2026-11-03T08:00:00+01:00","alice","192.0.2.10"\n'
+        b'"2026-11-03T08:01:00+01:00","bob","pas-une-ip"\n'
+    )
+
+
 class TestSortieStandardEnErreur:
-    def test_code_2_message_et_rejets_affiches(self, capsys, donnees, monkeypatch):
+    def test_code_2_message_et_rejets_affiches(self, capsys, ecrire_export, monkeypatch):
         tube = _TubeFerme()
         stdout = io.TextIOWrapper(io.BufferedWriter(tube), encoding="utf-8")
         monkeypatch.setattr(sys, "stdout", stdout)
 
-        code = appeler(donnees / "export_attaque.csv")
+        code = appeler(export_avec_un_rejet(ecrire_export))
 
         tube.ferme = False  # laisse le ramasse-miettes vider le tampon sans erreur
         assert code == 2
         assert capsys.readouterr().err.splitlines() == [
-            "ligne 16 rejetée : IP absente : -",
+            "ligne 3 rejetée : IP invalide : pas-une-ip",
             "sentinelle.py : erreur : écriture impossible sur la sortie standard"
             " (Invalid argument)",
         ]
@@ -509,16 +543,13 @@ class TestSortieStandardEnErreur:
             " (fermée)\n"
         )
 
-    def test_vrai_tube_ferme_code_2_sans_traceback(self, donnees, tmp_path):
+    def test_vrai_tube_ferme_code_2_sans_traceback(self, tmp_path, ecrire_export):
+        export = export_avec_un_rejet(ecrire_export)
         lecture, ecriture = os.pipe()
         os.close(lecture)  # personne ne lira : toute écriture échoue
         try:
             resultat = subprocess.run(
-                [
-                    sys.executable,
-                    str(RACINE / "sentinelle.py"),
-                    str(donnees / "export_attaque.csv"),
-                ],
+                [sys.executable, str(RACINE / "sentinelle.py"), str(export)],
                 cwd=tmp_path,
                 env={**os.environ, **CP1252},
                 stdout=ecriture,
@@ -530,7 +561,7 @@ class TestSortieStandardEnErreur:
 
         lignes = sans_cr(resultat.stderr).decode("utf-8").splitlines()
         assert resultat.returncode == 2, lignes
-        assert lignes[0] == "ligne 16 rejetée : IP absente : -"
+        assert lignes[0] == "ligne 3 rejetée : IP invalide : pas-une-ip"
         assert lignes[1].startswith(
             "sentinelle.py : erreur : écriture impossible sur la sortie standard"
         )
@@ -667,11 +698,11 @@ class Structure(HTMLParser):
 
 
 ATTAQUE = {
-    "total_echecs": 14,
-    "origines": 3,  # 203.0.113.66, 192.0.2.20, ::1
+    "total_echecs": 15,
+    "origines": 4,  # 203.0.113.66, 192.0.2.20, ::1, (local, sans IP)
     "periode": (
         datetime(2026, 11, 3, 2, 14, 5, 100000, tzinfo=PLUS_UNE),
-        datetime(2026, 11, 3, 9, 1, 30, tzinfo=PLUS_UNE),
+        datetime(2026, 11, 3, 9, 5, tzinfo=PLUS_UNE),  # ligne 16, « - »
     ),
 }
 
@@ -685,9 +716,7 @@ class TestRapportHtml:
 
         # Horloge réelle : un genere_le sans fuseau lèverait ValueError (traceback).
         assert resultat.returncode == 1
-        assert sans_cr(resultat.stderr) == "ligne 16 rejetée : IP absente : -\n".encode(
-            "utf-8"
-        )
+        assert resultat.stderr == b""  # ligne 16, « - » : un événement, plus un rejet
         assert sans_cr(resultat.stdout) == rapport_attendu(export).encode("utf-8")
         assert cible.is_file()
         octets = cible.read_bytes()
@@ -775,7 +804,8 @@ class TestRapportHtml:
         assert tmp_path.name not in document  # jamais le chemin du dossier
 
     def test_aucun_evenement_periode_absente(self, capsys, tmp_path, ecrire_export):
-        export = ecrire_export(b'Date,Compte,IP\n"2026-11-03T08:00:00Z","bob","-"\n')
+        # IP vide : rejetée. (« - » serait un événement : l'origine locale sans IP.)
+        export = ecrire_export(b'Date,Compte,IP\n"2026-11-03T08:00:00Z","bob",""\n')
         cible = tmp_path / "rapport.html"
 
         code, _, _ = lancer(capsys, export, "--html", cible, horloge=horloge_fixe)

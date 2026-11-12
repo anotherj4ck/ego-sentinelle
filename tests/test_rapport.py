@@ -1,4 +1,3 @@
-import re
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
@@ -7,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from ego.detection import Alerte, detecter
-from ego.lecture import LigneRejetee, Raison, lire_export
+from ego.lecture import SANS_IP, LigneRejetee, Raison, SansIP, lire_export
 from ego.modeles import Modeles, charger_modeles
 from ego.rapport import formater_duree, formater_instant, rediger
 
@@ -33,14 +32,14 @@ MODELES = Modeles(
 
 
 def alerte(
-    ip: str = "192.0.2.10",
+    ip: str | SansIP = "192.0.2.10",
     pic: int = 5,
     duree: timedelta = timedelta(minutes=4, seconds=12),
     total: int = 5,
     comptes: tuple[str, ...] = ("admin",),
 ) -> Alerte:
     return Alerte(
-        ip=ip_address(ip),
+        ip=ip_address(ip) if isinstance(ip, str) else ip,
         pic=pic,
         debut_pic=T0,
         fin_pic=T0 + duree,
@@ -244,6 +243,15 @@ class TestSections:
             "FIN fenetre=10 minutes\n"
         )
 
+    def test_origine_sans_ip_parmi_les_locales_avec_son_libelle(self):
+        alertes = [alerte(ip="203.0.113.7", pic=7), alerte(ip=SANS_IP, comptes=("-",))]
+
+        blocs = rapport(alertes).split("\n\n")
+
+        assert blocs[1].startswith("ALERTE ip=203.0.113.7 ")
+        # Le compte « - » reste un compte : il ne se confond pas avec l'origine.
+        assert blocs[2] == "LOCALE ip=(local, sans IP) nombre=5 comptes=[-]"
+
     def test_lignes_rejetees_comptees_avant_la_conclusion(self):
         rejets = [
             LigneRejetee(3, Raison.IP_ABSENTE, "-"),
@@ -294,9 +302,8 @@ class TestIntegration:
         alertes = detecter(lecture.evenements)
 
         texte = rediger(alertes, lecture.rejets, 5, FENETRE, charger_modeles(EGO))
-        entete, externes, locales, rejets, conclusion = texte.rstrip("\n").split(
-            "\n\n"
-        )
+        # Pas de bloc des lignes rejetées : la ligne 16, « - », est un événement.
+        entete, externes, locales, conclusion = texte.rstrip("\n").split("\n\n")
 
         # Structure seulement, jamais la formulation : les répliques d'ego.json
         # doivent pouvoir être réécrites sans casser ce test.
@@ -306,8 +313,9 @@ class TestIntegration:
             assert compte in externes
         assert "::1" in locales
         assert "203.0.113.66" not in locales
-        assert re.search(r"\b1\b", rejets)  # une ligne rejetée (ligne 16)
+        assert lecture.rejets == ()
         assert "192.0.2.20" not in texte  # sous le seuil
+        assert "(local, sans IP)" not in texte  # un seul échec « - » : sous le seuil
         assert all(bloc.strip() for bloc in (entete, conclusion))
 
     def test_compte_hostile_neutralise_de_bout_en_bout(self, ecrire_export):

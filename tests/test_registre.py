@@ -5,16 +5,47 @@ from ipaddress import ip_address
 import pytest
 
 from ego.detection import Alerte
+from ego.lecture import LIBELLE_SANS_IP, SANS_IP, SansIP
 from ego.registre import PLAFOND_REGISTRE, Registre, collecter_registre
 
 T0 = datetime(2026, 11, 3, 8, 0, tzinfo=timezone(timedelta(hours=1)))
 
 
-def alerte(ip: str, *comptes: str) -> Alerte:
-    """Alerte dont seuls l'IP et les comptes, dans l'ordre donné, comptent ici."""
+def alerte(ip: str | SansIP, *comptes: str) -> Alerte:
+    """Alerte dont seuls l'origine et les comptes, dans l'ordre donné, comptent ici."""
+    origine = ip_address(ip) if isinstance(ip, str) else ip
     return Alerte(
-        ip=ip_address(ip), pic=5, debut_pic=T0, fin_pic=T0, total=5, comptes=comptes
+        ip=origine, pic=5, debut_pic=T0, fin_pic=T0, total=5, comptes=comptes
     )
+
+
+class TestOrigineSansIP:
+    def test_libelle_inscrit_au_registre(self):
+        registre = collecter_registre((alerte(SANS_IP, "bob"),))
+
+        assert registre == Registre((LIBELLE_SANS_IP, "bob"), 2, 0)
+
+    def test_compte_nomme_tiret_distinct_de_l_origine(self):
+        # L'origine s'affiche « (local, sans IP) », jamais « - » : un compte
+        # nommé « - » ne peut pas se confondre avec elle.
+        registre = collecter_registre((alerte(SANS_IP, "-"),))
+
+        assert registre.noms == (LIBELLE_SANS_IP, "-")
+
+    @pytest.mark.parametrize("compte", [LIBELLE_SANS_IP, "(LOCAL, SANS IP)"])
+    def test_compte_nomme_comme_le_libelle_jamais_absorbe(self, compte):
+        # Origine d'abord, puis compte : deux entrées.
+        apres = collecter_registre((alerte(SANS_IP, compte),))
+        # Compte d'abord (autre alerte), puis origine : deux entrées aussi.
+        avant = collecter_registre((alerte("192.0.2.1", compte), alerte(SANS_IP)))
+
+        assert apres == Registre((LIBELLE_SANS_IP, compte), 2, 0)
+        assert avant == Registre(("192.0.2.1", compte, LIBELLE_SANS_IP), 3, 0)
+
+    def test_origine_comptee_une_fois(self):
+        registre = collecter_registre((alerte(SANS_IP, "a"), alerte(SANS_IP, "b")))
+
+        assert registre.noms == (LIBELLE_SANS_IP, "a", "b")
 
 
 def refus(plafond: object, alertes: tuple[Alerte, ...] = ()) -> str:

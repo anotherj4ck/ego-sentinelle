@@ -5,6 +5,7 @@ Le texte visible est relu avec html.parser, entités décodées : une valeur
 « affichée comme du texte » y figure telle quelle, sans balise dans le document.
 """
 
+import html
 import re
 import unicodedata
 from dataclasses import replace
@@ -17,7 +18,7 @@ import pytest
 
 from ego._redaction import ALERTES_MAX_AFFICHEES
 from ego.detection import Alerte
-from ego.lecture import LigneRejetee, Raison
+from ego.lecture import LIBELLE_SANS_IP, SANS_IP, LigneRejetee, Raison, SansIP
 from ego.modeles import Modeles
 from ego.rapport import rediger
 from ego.rapport_html import rediger_html
@@ -97,13 +98,13 @@ FIN_NEUTRE = '<p class="replique">Fin du rapport</p>'
 
 
 def alerte(
-    ip: str = "203.0.113.66",
+    ip: str | SansIP = "203.0.113.66",
     comptes: tuple[str, ...] = ("admin", "root"),
     pic: int = 6,
     total: int = 9,
 ) -> Alerte:
     return Alerte(
-        ip=ip_address(ip),
+        ip=ip_address(ip) if isinstance(ip, str) else ip,
         pic=pic,
         debut_pic=T0,
         fin_pic=T0 + timedelta(minutes=1, seconds=57),
@@ -416,6 +417,18 @@ class TestSecurite:
         assert ("class", "alerte externe") in sain
         assert set(Analyse(hostile()).attributs) == set(sain)
 
+    def test_attributs_identiques_avec_l_origine_sans_ip(self):
+        piege = ("<script>alert(1)</script>", f'" onmouseover="x{RLO}', "-")
+        sain = Analyse(rendre([alerte(), alerte(SANS_IP)], [rejet()])).attributs
+        hostile_sans_ip = rendre(
+            [alerte(comptes=piege), alerte(SANS_IP, comptes=piege)],
+            [rejet(detail='"><img src=x onerror=alert(1)>')],
+            source='C:/x/"><svg onload=alert(1)>.csv',
+        )
+
+        assert ("class", "alerte locale") in sain
+        assert set(Analyse(hostile_sans_ip).attributs) == set(sain)
+
     def test_valeurs_piegees_visibles_comme_texte(self):
         visible = texte(hostile())
 
@@ -654,6 +667,32 @@ class TestEsthetique:
 
         assert "∆ SUJET 203.0.113.1 · ALERTE · EXTERNE" in visible
         assert "∆ SUJET ::1 · LOCAL · SANS DOUTE UN TEST" in visible
+
+    def test_origine_sans_ip_etiquette_propre_et_affichage_local(self):
+        sortie = rendre([alerte(SANS_IP), alerte("::1")])
+        analyse = Analyse(sortie)
+        visible = analyse.texte
+
+        assert "∆ SUJET (local, sans IP) · LOCAL · CLAVIER OU SERVICE" in visible
+        assert "∆ SUJET ::1 · LOCAL · SANS DOUTE UN TEST" in visible
+        # Ambre : la classe « locale », comme ::1.
+        articles = [a.get("class") for b, a in analyse.elements if b == "article"]
+        assert articles == ["alerte locale", "alerte locale"]
+        # Le libellé, échappé, dans le titre de l'alerte et dans le registre.
+        echappe = html.escape(LIBELLE_SANS_IP, quote=True)
+        assert f"</span>{echappe}<span" in sortie
+        assert f"<li>{echappe}</li>" in sortie
+        assert LIBELLE_SANS_IP in analyse.texte_accessible
+
+    def test_origine_sans_ip_masquee_en_premier_au_dela_du_plafond(self):
+        externes = [alerte(f"192.0.2.{n}", comptes=()) for n in range(200)]
+        alertes = [alerte(SANS_IP, pic=99), *externes]  # pic le plus haut
+
+        visible = texte(rendre(alertes))
+
+        assert "∆ SUJET (local, sans IP)" not in visible
+        assert "∆ SUJET 192.0.2.199" in visible
+        assert "+ 1 alerte non affichée" in visible
 
     def test_adresses_de_marge_deterministes(self):
         visible = texte(rendre(trois_alertes()))

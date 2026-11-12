@@ -4,7 +4,7 @@ from ipaddress import ip_address
 import pytest
 
 from ego.detection import FENETRE, SEUIL_ECHECS, Alerte, detecter
-from ego.lecture import MARGE_CALCUL, Evenement, lire_export
+from ego.lecture import LIBELLE_SANS_IP, MARGE_CALCUL, SANS_IP, Evenement, lire_export
 
 PLUS_UNE_HEURE = timezone(timedelta(hours=1))
 T0 = datetime(2026, 11, 3, 8, 0, tzinfo=PLUS_UNE_HEURE)
@@ -229,6 +229,80 @@ class TestCasParticuliers:
             alerte.pic = 0  # type: ignore[misc]
 
 
+def sans_ip(*decalages: timedelta, compte: str = "admin") -> list[Evenement]:
+    """Échecs « - » (origine locale sans IP) à T0 + chaque décalage."""
+    return [Evenement(horodatage=T0 + d, compte=compte, ip=SANS_IP) for d in decalages]
+
+
+def detection(evenements: list[Evenement], **options) -> tuple[Alerte, ...]:
+    """detecter() ; une exception devient un échec par assertion."""
+    try:
+        return detecter(evenements, **options)
+    except Exception as erreur:  # noqa: BLE001 - signalée par l'assertion
+        raise AssertionError(f"detecter a levé {type(erreur).__name__}: {erreur}") from None
+
+
+def cle(alerte: Alerte) -> tuple[str, int, int, bool]:
+    return (str(alerte.ip), alerte.pic, alerte.total, alerte.est_locale)
+
+
+class TestOrigineSansIP:
+    def test_cinq_echecs_en_dix_minutes_alerte_locale(self):
+        alertes = detection(sans_ip(*minutes(0, 2, 4, 6, 8)))
+
+        assert [cle(a) for a in alertes] == [(LIBELLE_SANS_IP, 5, 5, True)]
+        assert alertes[0].ip == SANS_IP
+
+    def test_quatre_echecs_aucune_alerte(self):
+        assert detection(sans_ip(*minutes(0, 1, 2, 3))) == ()
+
+    def test_meme_fenetre_et_meme_seuil_que_les_autres(self):
+        etales = sans_ip(*minutes(0, 3, 6, 9, 12))  # 11 minutes du 1er au 5e
+
+        assert detection(etales) == ()
+        assert [a.pic for a in detection(etales, fenetre=timedelta(minutes=12))] == [5]
+        assert [a.pic for a in detection(etales, seuil=4)] == [4]
+
+    def test_tous_les_tirets_une_seule_origine(self):
+        evenements = sans_ip(*minutes(0, 1, 2), compte="alice") + sans_ip(
+            *minutes(3, 4), compte="bob"
+        )
+
+        (alerte,) = detection(evenements)
+
+        assert (alerte.pic, alerte.total, alerte.comptes) == (5, 5, ("alice", "bob"))
+
+    def test_melange_avec_des_ip_origines_distinctes(self):
+        cinq = minutes(0, 1, 2, 3, 4)
+        evenements = (
+            sans_ip(*cinq)
+            + rafale(*cinq, ip="::1")
+            + rafale(*cinq, ip=IP_B)
+            + rafale(*cinq, ip="127.0.0.1")
+            + rafale(*cinq, ip=IP_A)
+        )
+
+        alertes = detection(evenements)
+
+        # À pic égal : l'ordre des IP ne change pas, l'origine sans IP vient après.
+        assert [cle(a) for a in alertes] == [
+            ("127.0.0.1", 5, 5, True),
+            (IP_A, 5, 5, False),
+            (IP_B, 5, 5, False),
+            ("::1", 5, 5, True),
+            (LIBELLE_SANS_IP, 5, 5, True),
+        ]
+
+    def test_pic_decroissant_d_abord(self):
+        evenements = rafale(*minutes(0, 1, 2, 3, 4)) + sans_ip(
+            *minutes(0, 1, 2, 3, 4, 5)
+        )
+
+        alertes = detection(evenements)
+
+        assert [(str(a.ip), a.pic) for a in alertes] == [(LIBELLE_SANS_IP, 6), (IP_A, 5)]
+
+
 class TestIntegrationLecture:
     def test_export_d_attaque(self, donnees):
         lecture = lire_export(donnees / "export_attaque.csv")
@@ -246,4 +320,6 @@ class TestIntegrationLecture:
             "root",
             "sauvegarde",
         )
-        assert [r.numero for r in lecture.rejets] == [16]
+        # Ligne 16, « - » : un événement local sans IP, isolé, donc sans alerte.
+        assert lecture.rejets == ()
+        assert [e.compte for e in lecture.evenements if e.ip == SANS_IP] == ["bob"]

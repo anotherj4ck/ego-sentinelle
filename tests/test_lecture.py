@@ -7,11 +7,15 @@ from ipaddress import IPv4Address, ip_address
 import pytest
 
 from ego.lecture import (
+    LIBELLE_SANS_IP,
+    SANS_IP,
     ErreurFormat,
     Evenement,
     LigneRejetee,
     Raison,
+    SansIP,
     analyser_csv,
+    est_locale,
     lire_export,
 )
 
@@ -157,7 +161,7 @@ class TestDates:
 
 
 class TestIP:
-    @pytest.mark.parametrize("ip", ["-", "", "   "])
+    @pytest.mark.parametrize("ip", ["", "   "])
     def test_ip_absente_rejetee(self, ip):
         rejet = seul_rejet(analyser(ligne(ip=ip)))
 
@@ -184,12 +188,84 @@ class TestIP:
         assert evenement.ip == ip_address("192.0.2.10")
 
 
+class TestOrigineSansIP:
+    # Windows écrit « - » dans IpAddress pour les échecs locaux sans adresse :
+    # écran de connexion ou de déverrouillage, services, autres ouvertures locales.
+    @pytest.mark.parametrize("ip", ["-", " - ", "\t-  "])
+    def test_tiret_lu_comme_origine_locale_sans_ip(self, ip):
+        resultat = analyser(ligne(ip=ip))
+
+        assert resultat.rejets == ()
+        assert [e.ip for e in resultat.evenements] == [SANS_IP]
+        assert resultat.evenements[0].est_locale is True
+
+    @pytest.mark.parametrize(
+        ("ip", "raison"),
+        [
+            ("\N{EN DASH}", Raison.IP_INVALIDE),
+            ("\N{EM DASH}", Raison.IP_INVALIDE),
+            ("\N{MINUS SIGN}", Raison.IP_INVALIDE),
+            ("\N{HYPHEN}", Raison.IP_INVALIDE),
+            ("--", Raison.IP_INVALIDE),
+            ("- -", Raison.IP_INVALIDE),
+            ("N/A", Raison.IP_INVALIDE),
+            ("(local, sans IP)", Raison.IP_INVALIDE),
+            ("", Raison.IP_ABSENTE),
+        ],
+        ids=["tiret-demi", "tiret-cadratin", "moins", "trait-union", "double",
+             "espace", "n-a", "libelle", "vide"],
+    )  # fmt: skip
+    def test_aucune_autre_valeur_ne_produit_sans_ip(self, ip, raison):
+        rejet = seul_rejet(analyser(ligne(ip=ip)))
+
+        assert rejet.raison is raison
+
+    def test_libelle_ecrit_par_le_programme(self):
+        assert LIBELLE_SANS_IP == "(local, sans IP)"
+        assert str(SANS_IP) == LIBELLE_SANS_IP
+
+    def test_une_seule_origine(self):
+        resultat = analyser(
+            ligne(compte="alice", ip="-"), ligne(compte="bob", ip=" - ")
+        )
+
+        assert len({e.ip for e in resultat.evenements}) == 1
+        assert SansIP() == SANS_IP and hash(SansIP()) == hash(SANS_IP)
+        assert SANS_IP != ip_address("::1")
+
+    @pytest.mark.parametrize(
+        ("origine", "locale"),
+        [
+            (SANS_IP, True),
+            (ip_address("::1"), True),
+            (ip_address("127.0.0.5"), True),
+            (ip_address("192.0.2.10"), False),
+            (ip_address("2001:db8::1"), False),
+        ],
+        ids=str,
+    )
+    def test_est_locale(self, origine, locale):
+        assert est_locale(origine) is locale
+        evenement = Evenement(
+            horodatage=datetime(2026, 11, 3, tzinfo=PLUS_UNE_HEURE),
+            compte="bob",
+            ip=origine,
+        )
+        assert evenement.est_locale is locale
+
+
 class TestLignesMalformees:
+    def test_tiret_de_l_export_malforme_devient_un_evenement(self, donnees):
+        resultat = lire_export(donnees / "export_malforme.csv")
+
+        assert [(e.compte, e.ip) for e in resultat.evenements if e.ip == SANS_IP] == [
+            ("bob", SANS_IP)
+        ]
+
     def test_chaque_ligne_rejetee_avec_sa_raison(self, donnees):
         resultat = lire_export(donnees / "export_malforme.csv")
 
         assert [(r.numero, r.raison) for r in resultat.rejets] == [
-            (3, Raison.IP_ABSENTE),
             (4, Raison.IP_ABSENTE),
             (5, Raison.DATE_SANS_FUSEAU),
             (6, Raison.DATE_ILLISIBLE),
@@ -202,11 +278,12 @@ class TestLignesMalformees:
     def test_lignes_valides_conservees(self, donnees):
         resultat = lire_export(donnees / "export_malforme.csv")
 
-        assert [e.compte for e in resultat.evenements] == ["alice", "ines"]
+        # bob : ligne 3, IP « - », origine locale sans IP.
+        assert [e.compte for e in resultat.evenements] == ["alice", "bob", "ines"]
 
     def test_numero_de_debut_pour_un_champ_sur_plusieurs_lignes(self):
         # Ligne 2-3 : compte sur deux lignes et IP absente ; ligne 4 : IP absente.
-        resultat = analyser(f'"{DATE_OK}","a\nb","-"', ligne(ip="-"))
+        resultat = analyser(f'"{DATE_OK}","a\nb",""', ligne(ip=""))
 
         assert [r.numero for r in resultat.rejets] == [2, 4]
 
@@ -322,7 +399,7 @@ class TestImmuabilite:
             evenement.compte = "mallory"  # type: ignore[misc]
 
     def test_resultat_en_tuples(self):
-        resultat = analyser(ligne(), ligne(ip="-"))
+        resultat = analyser(ligne(), ligne(ip=""))
 
         assert isinstance(resultat.evenements, tuple)
         assert isinstance(resultat.rejets, tuple)

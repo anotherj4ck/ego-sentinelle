@@ -31,7 +31,7 @@ from ego._redaction import (
     valeurs_alerte,
 )
 from ego.detection import Alerte
-from ego.lecture import LigneRejetee
+from ego.lecture import LigneRejetee, SansIP
 from ego.modeles import Modeles
 from ego.neutralisation import neutraliser
 from ego.registre import Registre, collecter_registre
@@ -61,6 +61,8 @@ REMPLISSAGE = "░" * 32
 ETIQUETTES = {
     "externe": " · ALERTE · EXTERNE",
     "locale": " · LOCAL · SANS DOUTE UN TEST",
+    # Échecs « - » : écran de connexion ou de déverrouillage, services… Pas un test.
+    "sans_ip": " · LOCAL · CLAVIER OU SERVICE",
 }
 PAS_D_ADRESSE = 0xA0  # adresses de marge : 0x00A0, 0x0140, 0x01E0…
 CRAQUELURES = (
@@ -414,7 +416,8 @@ def _bloc_alerte(
     adresse: str,
 ) -> list[str]:
     valeurs = {**communs, **valeurs_alerte(alerte)}  # IP et comptes neutralisés
-    origine = "locale" if alerte.est_locale else "externe"
+    origine = "locale" if alerte.est_locale else "externe"  # classe CSS : ambre ou orange
+    etiquette = ETIQUETTES["sans_ip" if isinstance(alerte.ip, SansIP) else origine]
     fenetre_du_pic = (
         _periode((alerte.debut_pic, alerte.fin_pic))
         + f" ({formater_duree(alerte.fin_pic - alerte.debut_pic)})"
@@ -432,7 +435,7 @@ def _bloc_alerte(
         f'<span class="noeud"{MASQUE}><span class="fil"></span></span>',
         '<div class="corps">',
         f'<h3><span class="marque"{MASQUE}>∆ SUJET </span>{_texte(str(alerte.ip))}'
-        f'<span class="etiquette"{MASQUE}>{_texte(ETIQUETTES[origine])}</span></h3>',
+        f'<span class="etiquette"{MASQUE}>{_texte(etiquette)}</span></h3>',
         "<dl>",
         # Origine : dite par l'étiquette à l'écran, gardée pour les lecteurs d'écran.
         '<dt class="visuellement-masque">Origine</dt>'

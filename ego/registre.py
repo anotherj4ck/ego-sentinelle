@@ -1,9 +1,10 @@
-"""Registre d'Ego : tout ce qu'il a collecté dans les alertes, IP et comptes mêlés."""
+"""Registre d'Ego : tout ce qu'il a collecté dans les alertes, origines et comptes mêlés."""
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from ego.detection import Alerte
+from ego.lecture import SansIP
 
 PLAFOND_REGISTRE = 50
 
@@ -20,7 +21,7 @@ class Registre:
 def collecter_registre(
     alertes: Iterable[Alerte], plafond: int = PLAFOND_REGISTRE
 ) -> Registre:
-    """IP puis comptes de chaque alerte, sans doublon de casse.
+    """Origine (IP ou libellé) puis comptes de chaque alerte, sans doublon de casse.
 
     La première graphie rencontrée est gardée. Le plafond s'applique après le
     dédoublonnage. Lève ValueError si plafond n'est pas un entier >= 1.
@@ -30,14 +31,20 @@ def collecter_registre(
         raise ValueError(f"plafond invalide : {plafond!r} (entier >= 1 attendu)")
     # Clé lower() -> première graphie. Pas casefold() : il confond « ß » et « ss »,
     # que Windows tient pour deux comptes distincts.
-    uniques: dict[str, str] = {}
-    for nom in _noms(alertes):
-        uniques.setdefault(nom.lower(), nom)
+    uniques: dict[str | SansIP, str] = {}
+    for cle, nom in _noms(alertes):
+        uniques.setdefault(cle, nom)
     noms = tuple(uniques.values())[:plafond]
     return Registre(noms=noms, total=len(uniques), masques=len(uniques) - len(noms))
 
 
-def _noms(alertes: Iterable[Alerte]) -> Iterator[str]:
+def _noms(alertes: Iterable[Alerte]) -> Iterator[tuple[str | SansIP, str]]:
+    """(clé de dédoublonnage, nom affiché) des origines, puis des comptes.
+
+    L'origine sans IP a sa propre clé, qui n'est pas une chaîne : un compte
+    nommé « (local, sans IP) », choisi par l'attaquant, ne peut pas l'absorber.
+    """
     for alerte in alertes:
-        yield str(alerte.ip)
-        yield from alerte.comptes
+        nom = str(alerte.ip)
+        yield (alerte.ip if isinstance(alerte.ip, SansIP) else nom.lower()), nom
+        yield from ((compte.lower(), compte) for compte in alerte.comptes)

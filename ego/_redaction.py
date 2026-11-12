@@ -75,10 +75,11 @@ def graine(alertes: Sequence[Alerte], rejets: Sequence[LigneRejetee]) -> int:
 
 
 def valeurs_alerte(alerte: Alerte) -> dict[str, str]:
-    """Champs d'une alerte pour les répliques, IP et comptes déjà neutralisés.
+    """Champs d'une alerte pour les répliques, origine et comptes déjà neutralisés.
 
-    str(ip) peut porter un identifiant de zone arbitraire (fe80::1%<zone>) :
-    neutralisé ici, une fois pour toutes, comme les comptes.
+    $ip vaut str(origine) : l'adresse, ou le libellé « (local, sans IP) » écrit
+    par le programme. Neutralisée ici, une fois pour toutes, comme les comptes :
+    str(ip) pourrait porter un identifiant de zone arbitraire (fe80::1%<zone>).
     """
     return {
         "ip": neutraliser(str(alerte.ip)),

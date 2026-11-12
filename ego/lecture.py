@@ -21,11 +21,40 @@ from typing import Protocol, TextIO
 
 AdresseIP = IPv4Address | IPv6Address
 
+# Libellé de l'origine sans adresse : écrit par le programme, jamais lu dans l'export.
+LIBELLE_SANS_IP = "(local, sans IP)"
+
+
+@dataclass(frozen=True)
+class SansIP:
+    """Origine des échecs que Windows enregistre sans adresse (IpAddress « - »).
+
+    Écran de connexion ou de déverrouillage, services et autres ouvertures
+    locales, selon les cas. Sans champ : toutes les instances sont égales, et
+    tous les « - » d'un export forment une seule origine.
+    """
+
+    def __str__(self) -> str:
+        return LIBELLE_SANS_IP
+
+
+SANS_IP = SansIP()
+# Origine d'un échec : une adresse IP, ou SANS_IP. Seuls est_locale() et le tri des
+# alertes appellent des méthodes d'adresse ; ailleurs, str() et isinstance(SansIP).
+Origine = AdresseIP | SansIP
+VALEUR_SANS_IP = "-"
+
+
+def est_locale(origine: Origine) -> bool:
+    """Vrai pour SANS_IP et pour une adresse de bouclage (::1, 127.0.0.0/8)."""
+    return isinstance(origine, SansIP) or origine.is_loopback
+
+
 COLONNE_DATE = "Date"
 COLONNE_COMPTE = "Compte"
 COLONNE_IP = "IP"
 COLONNES_REQUISES = (COLONNE_DATE, COLONNE_COMPTE, COLONNE_IP)
-VALEURS_IP_ABSENTE = frozenset({"", "-"})
+VALEUR_IP_ABSENTE = ""
 
 # Format "o" de PowerShell : 2026-11-03T08:12:45.1234567+01:00 (ou suffixe Z).
 # Vérifié avant fromisoformat, dont la tolérance varie selon la version de Python.
@@ -71,12 +100,12 @@ class Evenement:
     # Peut être vide. Contrôlé par l'attaquant (nom tenté) : comme
     # LigneRejetee.detail, à assainir avant tout affichage.
     compte: str
-    ip: AdresseIP
+    ip: Origine  # adresse IP, ou SANS_IP pour « - »
 
     @property
     def est_locale(self) -> bool:
-        """Vrai pour une adresse de bouclage (::1, 127.0.0.0/8)."""
-        return self.ip.is_loopback
+        """Vrai pour SANS_IP et pour une adresse de bouclage (::1, 127.0.0.0/8)."""
+        return est_locale(self.ip)
 
 
 @dataclass(frozen=True)
@@ -237,8 +266,12 @@ def _est_calculable(horodatage: datetime) -> bool:
     return True
 
 
-def _lire_ip(texte: str) -> AdresseIP | Raison:
-    if texte in VALEURS_IP_ABSENTE:
+def _lire_ip(texte: str) -> Origine | Raison:
+    # texte est déjà débarrassé de ses espaces : « - » entouré d'espaces compte.
+    # Seul le trait d'union ASCII exact : « – », « -- » ou « N/A » restent invalides.
+    if texte == VALEUR_SANS_IP:
+        return SANS_IP
+    if texte == VALEUR_IP_ABSENTE:
         return Raison.IP_ABSENTE
     try:
         ip = ip_address(texte)

@@ -1,7 +1,8 @@
 # Ego Sentinelle
 
 Ego Sentinelle repère, dans le journal Sécurité de Windows, les adresses IP qui
-accumulent les échecs d'ouverture de session (événement 4625). Il rend son verdict
+accumulent les échecs d'ouverture de session (événement 4625), et les échecs locaux
+qui arrivent sans adresse. Il rend son verdict
 dans la voix d'Ego, sans rien bloquer ni modifier.
 
 Ego vient d'[*Ascendant*](https://anotherj4ck.github.io/auteur/), mon roman de science-fiction : c'est lui
@@ -36,7 +37,8 @@ Le détail suit : [prérequis](#prérequis),
 ## Ce que fait l'outil
 
 Ego Sentinelle lit les échecs d'ouverture de session enregistrés dans le journal
-Sécurité de Windows. Il repère les adresses IP qui s'acharnent : par défaut,
+Sécurité de Windows. Il repère les origines qui s'acharnent (une adresse IP, ou
+les échecs locaux sans adresse) : par défaut,
 **5 échecs ou plus dans une fenêtre glissante de 10 minutes**. Il rend ensuite son
 verdict sous la forme d'un court rapport, dans la voix d'Ego.
 
@@ -46,8 +48,9 @@ Deux outils, deux étapes :
    CSV (`Date,Compte,IP`).
 2. `sentinelle.py` analyse ce CSV et écrit le rapport :
    - les alertes venues de l'extérieur, d'abord ;
-   - les alertes locales (adresses de bouclage `127.0.0.0/8` et `::1`), dans une
-     section à part ;
+   - les alertes locales (adresses de bouclage `127.0.0.0/8` et `::1`, et échecs
+     sans adresse, voir [Échecs sans adresse IP](#échecs-sans-adresse-ip)), dans
+     une section à part ;
    - le nombre de lignes inexploitables, qui sont écartées et listées à part.
 
 L'outil ne fait que **lire et signaler**. Il ne bloque aucune adresse, ne modifie
@@ -57,15 +60,13 @@ texte, et sur demande un [rapport HTML](#rapport-html).
 Exemple sur les données fictives de `tests/donnees/export_attaque.csv` :
 
 ```text
-Analyse terminée. J'ai tout lu. Je lis toujours tout.
+Le journal est ouvert. Chaque ligne. Chaque nom. Chaque faute.
 
-203.0.113.66. 6 tentatives en 1 minute 57 secondes. Comptes visés : admin, administrateur, invite, root, sauvegarde. Je l'ai noté.
+203.0.113.66. 6 essais en 1 minute 57 secondes, de 2026-11-03 02:14:05 UTC+01:00 à 2026-11-03 02:16:02 UTC+01:00. Cibles : admin, administrateur, invite, root, sauvegarde. Je garde l'adresse.
 
-::1. La menace vient de l'intérieur. 5 tentatives. Je n'oublie personne.
+::1. Sous mon propre toit. 5 tentatives en 1 minute 30 secondes. Le matériau se croit libre.
 
-1 lignes illisibles. Écartées. Le désordre ne m'intéresse pas.
-
-Fin du rapport. Retournez à vos cycles.
+Fin du rapport. Reprenez vos tâches. Je regarde.
 ```
 
 ## Prérequis
@@ -224,7 +225,7 @@ comme le 11 mars.
 - **Date** : heure de l'événement, au format ISO 8601 avec le décalage horaire.
 - **Compte** : nom de compte tenté (`TargetUserName`).
 - **IP** : adresse source (`IpAddress`). Elle vaut `-` quand Windows n'en enregistre
-  pas.
+  pas (voir [Échecs sans adresse IP](#échecs-sans-adresse-ip)).
 
 Le script ne filtre rien : c'est `sentinelle.py` qui écarte les lignes inexploitables.
 
@@ -281,11 +282,40 @@ if ($LASTEXITCODE -eq 1) { Write-Warning "Ego a des choses à dire : voir rappor
 - **Le rapport** va sur la sortie standard, ou dans le fichier indiqué par
   `--sortie`.
 - **Les lignes rejetées** vont sur stderr, une par ligne, **avant** le rapport. Par
-  exemple : `ligne 16 rejetée : IP absente : -`.
+  exemple : `ligne 7 rejetée : IP invalide : 192.0.2.999`.
   - Au-delà de 20, seul « … et N autre(s) » est affiché.
   - Les motifs de rejet sont : ligne CSV illisible, nombre de champs incorrect, date
-    illisible, date sans fuseau horaire, IP absente, IP invalide.
-  - Les échecs locaux sans adresse (`-`) entrent dans le motif « IP absente ».
+    illisible, date sans fuseau horaire, IP absente (champ vide), IP invalide.
+  - Un `-` dans la colonne IP n'est **pas** rejeté : c'est un échec local sans
+    adresse (voir [Échecs sans adresse IP](#échecs-sans-adresse-ip)).
+
+#### Échecs sans adresse IP
+
+Dans un événement 4625, Windows écrit `-` dans `IpAddress` quand l'échec ne vient
+pas du réseau : une faute de frappe à l'écran de connexion ou de déverrouillage,
+par exemple, ou des services et autres ouvertures locales, selon les cas. Ces
+échecs sont **détectés** : tous les `-` d'un export forment une seule origine,
+affichée **`(local, sans IP)`**, soumise au même seuil et à la même fenêtre que
+les adresses IP.
+
+- C'est une origine **locale** : en cas d'alerte, elle rejoint la section des
+  alertes locales (code de sortie 1), et s'affiche en ambre dans le rapport HTML,
+  avec l'étiquette « LOCAL · CLAVIER OU SERVICE ».
+- Elle compte dans le volume lu et dans le nombre d'origines.
+- Le libellé `(local, sans IP)` est écrit par le programme, jamais lu dans
+  l'export. Dans le registre du rapport HTML, il reste distinct d'un compte qui
+  porterait le même nom.
+- Seul le trait d'union ASCII `-`, éventuellement entouré d'espaces, a ce sens.
+  Un champ vide reste rejeté (« IP absente ») ; `–`, `—`, `--` ou `N/A` aussi
+  (« IP invalide »).
+
+**Limite :** l'export ne contient pas le type d'ouverture de session (`LogonType`).
+Sans lui, on ne distingue pas cinq fautes de frappe à l'écran de déverrouillage
+d'un service configuré avec un mot de passe périmé. `export-4625.ps1` pourrait
+l'ajouter plus tard.
+
+Avant cette détection, ces échecs étaient rejetés comme « IP absente » : des essais
+de mots de passe au clavier passaient pour du bruit.
 - **Fins de ligne :**
   - sur la sortie standard, Windows écrit des **CRLF** ;
   - avec `--sortie`, le fichier est en **UTF-8 sans BOM** avec des fins de ligne
@@ -458,6 +488,10 @@ Tapez un mauvais mot de passe à l'invite, et recommencez avec `test8`, `test9`�
 `runas` produit des échecs locaux : Windows enregistre l'adresse `::1`, et Ego les
 range dans ses alertes locales. Pour tester la détection d'une adresse externe,
 préférez `net use` depuis une autre machine.
+
+Les fautes de frappe à l'écran de connexion ou de déverrouillage de la VM
+produisent, elles, des échecs sans adresse (`-`), rangés sous `(local, sans IP)` :
+voir [Échecs sans adresse IP](#échecs-sans-adresse-ip).
 
 ## Personnaliser les répliques
 
