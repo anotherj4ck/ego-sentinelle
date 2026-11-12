@@ -2,6 +2,9 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
+markers = [
+    "powershell: lance powershell.exe (lent, Windows seulement) ; suite rapide : -m \"not powershell\"",
+]
 
 [tool.coverage.run]
 source = ["ego", "sentinelle"]

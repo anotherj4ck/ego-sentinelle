@@ -23,7 +23,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\export-4625.ps1 -Sorti
 python sentinelle.py .\echecs.csv
 ```
 
-Le détail suit : [prérequis](#prérequis), [utilisation](#utilisation),
+Le détail suit : [prérequis](#prérequis),
+[lancement par double-clic](#lancement-par-double-clic), [utilisation](#utilisation),
 [rapport HTML](#rapport-html),
 [pièges de PowerShell 5.1](#pièges-de-windows-powershell-51),
 [événements de test](#générer-des-événements-4625-de-test-sur-une-vm),
@@ -74,6 +75,107 @@ Fin du rapport. Retournez à vos cycles.
 - **Python**, pour l'analyse : testé sous Python 3.14 ; syntaxe compatible 3.11.
 - **Aucune dépendance à l'exécution** : `sentinelle.py` n'utilise que la
   bibliothèque standard de Python. `pytest` ne sert qu'à lancer les tests.
+
+## Lancement par double-clic
+
+Double-cliquez sur **`ego-sentinelle.cmd`**. Le lanceur enchaîne les deux étapes
+décrites dans [Utilisation](#utilisation), puis ouvre le
+[rapport HTML](#rapport-html) dans le navigateur.
+
+### Ce que fait le lanceur
+
+`ego-sentinelle.cmd` ne fait que lancer `lancer.ps1`, placé à côté de lui, et garder
+la fenêtre ouverte. `lancer.ps1` fait le reste, dans cet ordre :
+
+1. il crée le dossier de travail `%LOCALAPPDATA%\EgoSentinelle`, **hors du dépôt** ;
+2. il vérifie que Python 3.11 ou plus récent est disponible (`py -3`, sinon
+   `python`), **avant** de demander quoi que ce soit ;
+3. il lance `export-4625.ps1` avec élévation : c'est la fenêtre UAC ;
+4. il lance `sentinelle.py` **sans élévation** sur le CSV obtenu. Le rapport texte
+   s'affiche dans la console ;
+5. il ouvre le rapport HTML si l'analyse a abouti, puis indique où sont les fichiers.
+
+Par défaut, l'export couvre les **7 derniers jours**. Depuis une console, on peut
+choisir de 1 à 365 jours :
+
+```powershell
+.\ego-sentinelle.cmd -Jours 30
+```
+
+Le code de sortie est celui de `sentinelle.py` (voir
+[Codes de sortie](#codes-de-sortie)). Tout échec du lanceur lui-même donne le
+code 2 : usage incorrect, Python introuvable, élévation refusée, export en échec.
+
+### Pourquoi une fenêtre UAC apparaît
+
+Le journal Sécurité n'est lisible que par un administrateur. Le lanceur applique le
+**principe du moindre privilège** : seul `export-4625.ps1` est élevé, le temps de
+l'export. Ni `lancer.ps1`, ni Python, ni le navigateur ne le sont jamais.
+
+Si vous refusez l'élévation, le lanceur s'arrête : aucun export, aucun rapport.
+
+Deux limites à connaître :
+
+- **La fenêtre UAC affiche « Windows PowerShell », pas le nom du script.** Elle
+  certifie le programme de Microsoft, pas ce qu'il va exécuter. Or
+  `export-4625.ps1` se trouve dans un dossier que votre compte peut modifier : un
+  programme tournant sous votre compte pourrait le modifier avant l'élévation, et
+  son contenu s'exécuterait alors avec les droits administrateur.
+  - Placez le dépôt dans un dossier que vous seul pouvez modifier.
+  - Relisez `export-4625.ps1` et `lancer.ps1` avant le premier lancement : ils sont
+    courts.
+  - « Afficher plus de détails », dans la fenêtre UAC, montre la ligne de commande
+    complète, avec le chemin du script.
+- **Une stratégie d'exécution imposée par l'organisation (GPO) l'emporte sur
+  `-ExecutionPolicy Bypass`.** Sur un poste ainsi configuré, le lanceur échoue dès
+  le départ avec le message de PowerShell. C'est voulu : il ne cherche pas à
+  contourner une règle de l'organisation. Dans ce seul cas, le code de sortie est
+  celui de PowerShell (1), et non 2 : `lancer.ps1` n'a pas pu démarrer.
+
+Le lanceur ne fonctionne pas depuis un lecteur réseau mappé : le processus élevé ne
+voit pas les lecteurs de la session ordinaire. Copiez le dépôt sur un disque local.
+
+### Où vont les fichiers, et comment les supprimer
+
+Chaque lancement écrit deux fichiers horodatés dans `%LOCALAPPDATA%\EgoSentinelle` :
+
+| Fichier | Contenu |
+|---|---|
+| `echecs-AAAAMMJJ-HHMMSS.csv` | L'export des événements 4625. |
+| `rapport-AAAAMMJJ-HHMMSS.html` | Le rapport HTML d'Ego. |
+
+Ces fichiers contiennent **de vraies adresses IP et de vrais noms de compte**. Ils
+restent hors du dépôt pour ne jamais être versionnés par erreur : ne les y copiez
+pas (voir [Ne publiez jamais un export réel](#ne-publiez-jamais-un-export-réel)).
+
+Rien n'est supprimé automatiquement : les fichiers s'accumulent. Pour tout effacer :
+
+```powershell
+Remove-Item -Recurse -LiteralPath "$env:LOCALAPPDATA\EgoSentinelle"
+```
+
+Pour les consulter, tapez `%LOCALAPPDATA%\EgoSentinelle` dans la barre d'adresse de
+l'Explorateur.
+
+### Avertissement SmartScreen
+
+Un fichier téléchargé depuis GitHub par le navigateur (archive ZIP) porte la « marque
+du Web ». Au double-clic, Windows peut alors afficher « Windows a protégé votre
+ordinateur » ou « Impossible de vérifier l'éditeur » : le lanceur n'est pas signé.
+C'est une précaution normale pour un script venu d'Internet.
+
+- **Le plus simple : clonez le dépôt avec git.** Un clone ne porte pas cette marque.
+- Sinon, **après avoir relu les scripts**, débloquez-les depuis le dossier du dépôt :
+
+  ```powershell
+  Get-ChildItem -Recurse -File | Unblock-File
+  ```
+
+Ne désactivez pas SmartScreen pour autant.
+
+Le lanceur demande une élévation : il ne peut pas être testé entièrement par la
+suite automatique. La liste des vérifications à faire à la main se trouve dans
+[docs/verifier-le-lanceur.md](docs/verifier-le-lanceur.md).
 
 ## Utilisation
 
@@ -489,6 +591,24 @@ utilisent les exports fictifs de `tests/donnees/`. Ils ne dépendent pas non plu
 texte des répliques : vous pouvez réécrire `ego.json` sans casser autre chose que le
 test de voix.
 
+Les tests du lanceur (`tests/test_lanceur.py`) appellent les fonctions de
+`lancer.ps1` dans un vrai Windows PowerShell 5.1, par l'intermédiaire de
+`tests/pilote_lanceur.ps1`. Ils ne déclenchent jamais d'élévation et n'ouvrent jamais
+de navigateur. Hors de Windows, ceux qui ont besoin de `powershell.exe` sont sautés ;
+les contrôles sur les octets des fichiers (ASCII et CRLF du `.cmd`, BOM des `.ps1`)
+tournent partout. Ce qu'ils ne peuvent pas couvrir est listé dans
+[docs/verifier-le-lanceur.md](docs/verifier-le-lanceur.md).
+
+Les tests qui lancent `powershell.exe` sont lents : ils font passer la suite de 3 à
+une vingtaine de secondes. Ils portent le marqueur pytest `powershell`, déclaré dans
+`pyproject.toml`. Pour la suite rapide, sans eux :
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -m "not powershell"
+```
+
+Lancez la suite complète avant de committer une modification du lanceur.
+
 ## Sécurité
 
 ### Les champs contrôlés par l'attaquant sont neutralisés
@@ -528,7 +648,7 @@ jamais interprétés comme un modèle.
 Un caractère bidirectionnel (comme U+202E) ou invisible peut faire lire à un
 relecteur autre chose que ce que Python exécute. Un test de garde,
 `tests/test_sources_propres.py`, échoue si l'un des fichiers `.py`, `.json`, `.md`,
-`.ps1`, `.toml` ou `.cfg` du dépôt en contient un. Il vérifie les fichiers suivis par
+`.ps1`, `.cmd`, `.toml` ou `.cfg` du dépôt en contient un. Il vérifie les fichiers suivis par
 git, et aussi les nouveaux fichiers non ignorés, avant leur premier commit. Il
 signale :
 - les caractères de contrôle, sauf le saut de ligne, le retour chariot et la

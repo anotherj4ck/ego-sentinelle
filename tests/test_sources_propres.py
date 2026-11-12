@@ -15,7 +15,7 @@ import pytest
 from ego.neutralisation import CATEGORIES_NEUTRALISEES
 
 RACINE = Path(__file__).parent.parent
-EXTENSIONS = frozenset({".py", ".json", ".md", ".ps1", ".toml", ".cfg"})
+EXTENSIONS = frozenset({".py", ".json", ".md", ".ps1", ".cmd", ".toml", ".cfg"})
 # Les catégories neutralisées dans le rapport (Cc, Cf, Co, Cs, Zl, Zp), sauf les
 # espaces (Zs) : le français typographié emploie des espaces insécables.
 CATEGORIES_INTERDITES = CATEGORIES_NEUTRALISEES - {"Zs"}
@@ -315,6 +315,7 @@ class TestDepot:
 
         attendus = {
             "README.md",
+            "ego-sentinelle.cmd",
             "ego/neutralisation.py",
             "export-4625.ps1",
             "modeles/ego.json",
