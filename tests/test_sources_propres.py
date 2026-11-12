@@ -15,7 +15,10 @@ import pytest
 from ego.neutralisation import CATEGORIES_NEUTRALISEES
 
 RACINE = Path(__file__).parent.parent
-EXTENSIONS = frozenset({".py", ".json", ".md", ".ps1", ".cmd", ".toml", ".cfg"})
+# .yml et .yaml : un workflow GitHub Actions est du code exécuté, comme un .py.
+EXTENSIONS = frozenset(
+    {".py", ".json", ".md", ".ps1", ".cmd", ".toml", ".cfg", ".yml", ".yaml"}
+)
 # Les catégories neutralisées dans le rapport (Cc, Cf, Co, Cs, Zl, Zp), sauf les
 # espaces (Zs) : le français typographié emploie des espaces insécables.
 CATEGORIES_INTERDITES = CATEGORIES_NEUTRALISEES - {"Zs"}
@@ -238,6 +241,18 @@ class TestFichiers:
         # git ls-files liste encore un fichier suivi supprimé mais non indexé.
         assert anomalies(tmp_path, ["absent.py"]) == []
 
+    @pytest.mark.parametrize("nom", [".github/workflows/piege.yml", "piege.yaml"])
+    def test_yaml_piege_detecte(self, tmp_path, nom):
+        # Un workflow est du code exécuté par GitHub : listé et vérifié comme un .py.
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        chemin = tmp_path / nom
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(f"run: echo a{RLO}b\n", encoding="utf-8")
+
+        trouves = anomalies(tmp_path, fichiers_surveilles(tmp_path))
+
+        assert trouves == [f"{nom}:1:12 U+202E"]
+
     def test_liste_blanche_nommee_et_non_par_dossier(self, tmp_path):
         donnees = tmp_path / "tests" / "donnees"
         donnees.mkdir(parents=True)
@@ -314,6 +329,8 @@ class TestDepot:
         noms = fichiers_surveilles(RACINE)
 
         attendus = {
+            ".github/dependabot.yml",
+            ".github/workflows/tests.yml",
             "README.md",
             "ego-sentinelle.cmd",
             "ego/neutralisation.py",

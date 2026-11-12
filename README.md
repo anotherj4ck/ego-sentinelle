@@ -695,9 +695,9 @@ jamais interprétés comme un modèle.
 ### Sources sans caractère invisible
 
 Un caractère bidirectionnel (comme U+202E) ou invisible peut faire lire à un
-relecteur autre chose que ce que Python exécute. Un test de garde,
+relecteur autre chose que ce qui s'exécute. Un test de garde,
 `tests/test_sources_propres.py`, échoue si l'un des fichiers `.py`, `.json`, `.md`,
-`.ps1`, `.cmd`, `.toml` ou `.cfg` du dépôt en contient un. Il vérifie les fichiers suivis par
+`.ps1`, `.cmd`, `.toml`, `.cfg`, `.yml` ou `.yaml` du dépôt en contient un. Il vérifie les fichiers suivis par
 git, et aussi les nouveaux fichiers non ignorés, avant leur premier commit. Il
 signale :
 - les caractères de contrôle, sauf le saut de ligne, le retour chariot et la
