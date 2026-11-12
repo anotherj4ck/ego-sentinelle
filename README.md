@@ -8,9 +8,10 @@ dans la voix d'Ego, sans rien bloquer ni modifier.
 Ego vient d'[*Ascendant*](https://anotherj4ck.github.io/auteur/), mon roman de science-fiction : c'est lui
 qui gouverne Londinium, et rien ne lui échappe.
 
-<!-- Capture d'écran : remplacer la ligne ci-dessous par l'image, par exemple
-     ![Rapport d'Ego sur un export fictif](docs/capture.png) -->
-> *Capture d'écran à venir.*
+![Rapport HTML d'Ego sur fond sombre. En tête : source export_attaque.csv, 15 échecs, 4 origines, état ALERTE · CODE 1. Puis deux alertes reliées à un fil vertical : une alerte externe en orange pour 203.0.113.66 (6 échecs, 5 comptes visés), et une alerte locale en ambre pour ::1 (5 échecs, étiquette LOCAL · DEPUIS CETTE MACHINE). En bas, le registre des 8 noms collectés.](docs/capture-rapport.jpeg)
+
+*Rapport HTML produit sur des données fictives (adresses de documentation) par
+`python sentinelle.py .\tests\donnees\export_attaque.csv --html .\rapport.html`.*
 
 Démonstration **sur une VM de test**, dans une console PowerShell ouverte en
 administrateur, à la racine du dépôt :
