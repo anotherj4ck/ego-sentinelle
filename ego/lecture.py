@@ -29,9 +29,9 @@ LIBELLE_SANS_IP = "(local, sans IP)"
 class SansIP:
     """Origine des échecs que Windows enregistre sans adresse (IpAddress « - »).
 
-    Écran de connexion ou de déverrouillage, services et autres ouvertures
-    locales, selon les cas. Sans champ : toutes les instances sont égales, et
-    tous les « - » d'un export forment une seule origine.
+    Cause non établie ; voir README, Échecs locaux. Sans champ : toutes les
+    instances sont égales, et tous les « - » d'un export forment une seule
+    origine.
     """
 
     def __str__(self) -> str:

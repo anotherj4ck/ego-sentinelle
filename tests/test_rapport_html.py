@@ -666,15 +666,28 @@ class TestEsthetique:
         visible = texte(rendre(trois_alertes()))
 
         assert "∆ SUJET 203.0.113.1 · ALERTE · EXTERNE" in visible
-        assert "∆ SUJET ::1 · LOCAL · SANS DOUTE UN TEST" in visible
+        assert "∆ SUJET ::1 · LOCAL · DEPUIS CETTE MACHINE" in visible
 
-    def test_origine_sans_ip_etiquette_propre_et_affichage_local(self):
-        sortie = rendre([alerte(SANS_IP), alerte("::1")])
+    def test_une_seule_etiquette_pour_toutes_les_origines_locales(self):
+        # Observé le 2026-11-12 sur une VM : des fautes de frappe à l'écran de
+        # déverrouillage arrivent en 127.0.0.1. Une étiquette qui les présenterait
+        # comme « un test » minimiserait exactement ce qu'il faut signaler.
+        locales = [alerte("127.0.0.1"), alerte("127.8.9.10"), alerte("::1")]
+        sortie = rendre([*locales, alerte(SANS_IP)])
         analyse = Analyse(sortie)
         visible = analyse.texte
 
-        assert "∆ SUJET (local, sans IP) · LOCAL · CLAVIER OU SERVICE" in visible
-        assert "∆ SUJET ::1 · LOCAL · SANS DOUTE UN TEST" in visible
+        for origine in ("127.0.0.1", "127.8.9.10", "::1", "(local, sans IP)"):
+            assert f"∆ SUJET {origine} · LOCAL · DEPUIS CETTE MACHINE" in visible
+        for minimisant in ("TEST", "CLAVIER", "SERVICE", "BRUIT"):
+            assert minimisant not in visible
+        # Ambre : la classe « locale » pour toutes.
+        articles = [a.get("class") for b, a in analyse.elements if b == "article"]
+        assert articles == ["alerte locale"] * 4
+
+    def test_origine_sans_ip_affichage_local(self):
+        sortie = rendre([alerte(SANS_IP), alerte("::1")])
+        analyse = Analyse(sortie)
         # Ambre : la classe « locale », comme ::1.
         articles = [a.get("class") for b, a in analyse.elements if b == "article"]
         assert articles == ["alerte locale", "alerte locale"]

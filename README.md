@@ -49,7 +49,7 @@ Deux outils, deux étapes :
 2. `sentinelle.py` analyse ce CSV et écrit le rapport :
    - les alertes venues de l'extérieur, d'abord ;
    - les alertes locales (adresses de bouclage `127.0.0.0/8` et `::1`, et échecs
-     sans adresse, voir [Échecs sans adresse IP](#échecs-sans-adresse-ip)), dans
+     sans adresse, voir [Échecs locaux](#échecs-locaux)), dans
      une section à part ;
    - le nombre de lignes inexploitables, qui sont écartées et listées à part.
 
@@ -225,7 +225,7 @@ comme le 11 mars.
 - **Date** : heure de l'événement, au format ISO 8601 avec le décalage horaire.
 - **Compte** : nom de compte tenté (`TargetUserName`).
 - **IP** : adresse source (`IpAddress`). Elle vaut `-` quand Windows n'en enregistre
-  pas (voir [Échecs sans adresse IP](#échecs-sans-adresse-ip)).
+  pas (voir [Échecs locaux](#échecs-locaux)).
 
 Le script ne filtre rien : c'est `sentinelle.py` qui écarte les lignes inexploitables.
 
@@ -287,35 +287,7 @@ if ($LASTEXITCODE -eq 1) { Write-Warning "Ego a des choses à dire : voir rappor
   - Les motifs de rejet sont : ligne CSV illisible, nombre de champs incorrect, date
     illisible, date sans fuseau horaire, IP absente (champ vide), IP invalide.
   - Un `-` dans la colonne IP n'est **pas** rejeté : c'est un échec local sans
-    adresse (voir [Échecs sans adresse IP](#échecs-sans-adresse-ip)).
-
-#### Échecs sans adresse IP
-
-Dans un événement 4625, Windows écrit `-` dans `IpAddress` quand l'échec ne vient
-pas du réseau : une faute de frappe à l'écran de connexion ou de déverrouillage,
-par exemple, ou des services et autres ouvertures locales, selon les cas. Ces
-échecs sont **détectés** : tous les `-` d'un export forment une seule origine,
-affichée **`(local, sans IP)`**, soumise au même seuil et à la même fenêtre que
-les adresses IP.
-
-- C'est une origine **locale** : en cas d'alerte, elle rejoint la section des
-  alertes locales (code de sortie 1), et s'affiche en ambre dans le rapport HTML,
-  avec l'étiquette « LOCAL · CLAVIER OU SERVICE ».
-- Elle compte dans le volume lu et dans le nombre d'origines.
-- Le libellé `(local, sans IP)` est écrit par le programme, jamais lu dans
-  l'export. Dans le registre du rapport HTML, il reste distinct d'un compte qui
-  porterait le même nom.
-- Seul le trait d'union ASCII `-`, éventuellement entouré d'espaces, a ce sens.
-  Un champ vide reste rejeté (« IP absente ») ; `–`, `—`, `--` ou `N/A` aussi
-  (« IP invalide »).
-
-**Limite :** l'export ne contient pas le type d'ouverture de session (`LogonType`).
-Sans lui, on ne distingue pas cinq fautes de frappe à l'écran de déverrouillage
-d'un service configuré avec un mot de passe périmé. `export-4625.ps1` pourrait
-l'ajouter plus tard.
-
-Avant cette détection, ces échecs étaient rejetés comme « IP absente » : des essais
-de mots de passe au clavier passaient pour du bruit.
+    adresse (voir [Échecs locaux](#échecs-locaux)).
 - **Fins de ligne :**
   - sur la sortie standard, Windows écrit des **CRLF** ;
   - avec `--sortie`, le fichier est en **UTF-8 sans BOM** avec des fins de ligne
@@ -327,6 +299,39 @@ de mots de passe au clavier passaient pour du bruit.
   (`ego.json`), même désigné par un autre chemin (`.\sous\..\echecs.csv`, une casse
   différente…). Le programme s'arrête alors avec le code 2, sans rien écrire. Tout
   autre fichier existant est écrasé sans confirmation.
+
+#### Échecs locaux
+
+Un échec qui vient de la machine elle-même arrive dans le journal avec l'une de
+trois origines. Ce tableau ne contient que des cas observés, sur une VM Windows de
+test :
+
+| Origine dans l'événement 4625 | Cas observé |
+|---|---|
+| `127.0.0.1` | Mauvais mots de passe à l'écran de déverrouillage de session (observé le 12/11/2026). |
+| `::1` | Mauvais mot de passe avec `runas` (observé lors des essais précédents). |
+| `-` (aucune adresse) | Échecs locaux dont la cause exacte n'est pas établie, probablement l'ouverture de session au démarrage. |
+
+**Les trois sont traités de la même façon, comme des alertes locales.** Au-delà du
+seuil, ils rejoignent la section des alertes locales du rapport (code de sortie 1),
+et s'affichent en ambre dans le rapport HTML, avec l'étiquette « LOCAL · DEPUIS
+CETTE MACHINE ». Une alerte locale n'est pas un bruit de fond : l'essai du
+12/11/2026, cinq mauvais mots de passe au clavier, en a produit une.
+
+**Le cas `-`.** Tous les `-` d'un export forment une seule origine, affichée
+**`(local, sans IP)`**, soumise au même seuil et à la même fenêtre que les adresses
+IP.
+- Elle compte dans le volume lu et dans le nombre d'origines.
+- Le libellé `(local, sans IP)` est écrit par le programme, jamais lu dans
+  l'export. Dans le registre du rapport HTML, il reste distinct d'un compte qui
+  porterait le même nom.
+- Seul le trait d'union ASCII `-`, éventuellement entouré d'espaces, a ce sens.
+  Un champ vide reste rejeté (« IP absente ») ; `–`, `—`, `--` ou `N/A` aussi
+  (« IP invalide »).
+
+**Limite :** l'export ne contient pas le type d'ouverture de session (`LogonType`).
+Sans lui, on ne peut pas distinguer ces cas de façon fiable, ni savoir ce qui a
+produit un échec local donné. `export-4625.ps1` pourrait l'ajouter plus tard.
 
 ## Rapport HTML
 
@@ -489,9 +494,9 @@ Tapez un mauvais mot de passe à l'invite, et recommencez avec `test8`, `test9`�
 range dans ses alertes locales. Pour tester la détection d'une adresse externe,
 préférez `net use` depuis une autre machine.
 
-Les fautes de frappe à l'écran de connexion ou de déverrouillage de la VM
-produisent, elles, des échecs sans adresse (`-`), rangés sous `(local, sans IP)` :
-voir [Échecs sans adresse IP](#échecs-sans-adresse-ip).
+De mauvais mots de passe à l'écran de déverrouillage de la VM produisent aussi une
+alerte locale, avec l'adresse `127.0.0.1` (observé le 12/11/2026) : voir
+[Échecs locaux](#échecs-locaux).
 
 ## Personnaliser les répliques
 

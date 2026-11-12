@@ -189,8 +189,8 @@ class TestIP:
 
 
 class TestOrigineSansIP:
-    # Windows écrit « - » dans IpAddress pour les échecs locaux sans adresse :
-    # écran de connexion ou de déverrouillage, services, autres ouvertures locales.
+    # Windows écrit « - » dans IpAddress pour des échecs locaux sans adresse :
+    # cause non établie ; voir README, Échecs locaux.
     @pytest.mark.parametrize("ip", ["-", " - ", "\t-  "])
     def test_tiret_lu_comme_origine_locale_sans_ip(self, ip):
         resultat = analyser(ligne(ip=ip))
