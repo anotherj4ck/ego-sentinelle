@@ -1,5 +1,7 @@
 # Ego Sentinelle
 
+[![tests](https://github.com/anotherj4ck/ego-sentinelle/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/anotherj4ck/ego-sentinelle/actions/workflows/tests.yml)
+
 Ego Sentinelle repère, dans le journal Sécurité de Windows, les adresses IP qui
 accumulent les échecs d'ouverture de session (événement 4625), et les échecs locaux
 qui arrivent sans adresse. Il rend son verdict
@@ -648,6 +650,13 @@ une vingtaine de secondes. Ils portent le marqueur pytest `powershell`, déclar�
 ```
 
 Lancez la suite complète avant de committer une modification du lanceur.
+
+La CI GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml))
+lance la suite complète à chaque push et pull request sur `master` : sous Windows
+avec Python 3.11 à 3.14, tests Windows PowerShell 5.1 compris, et sous Ubuntu avec
+Python 3.14 pour la partie portable (les tests « powershell » y sont sautés).
+Dependabot propose chaque semaine la mise à jour des actions de la CI, épinglées par
+leur SHA ([`.github/dependabot.yml`](.github/dependabot.yml)).
 
 ## Sécurité
 

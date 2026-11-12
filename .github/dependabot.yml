@@ -1,0 +1,8 @@
+# Mises à jour des actions GitHub épinglées par SHA (SHA et commentaire de version).
+# Pas de Dependabot pour pip à cette étape : requirements-dev.txt est mis à jour à la main.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

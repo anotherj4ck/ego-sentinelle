@@ -1,0 +1,75 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Lecture seule : le workflow ne publie rien et n'utilise aucun secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          # Partie portable : les tests « powershell » y sont sautés.
+          - os: ubuntu-latest
+            python: "3.14"
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installer Python ${{ matrix.python }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Vérifier Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell  # Windows PowerShell 5.1, pas pwsh (PowerShell 7)
+        run: |
+          $PSVersionTable
+          $chemin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          if (-not (Test-Path -LiteralPath $chemin)) { throw "Introuvable : $chemin" }
+          $v = $PSVersionTable.PSVersion
+          if ($v.Major -ne 5 -or $v.Minor -ne 1) { throw "Windows PowerShell 5.1 attendu, trouvé $v" }
+
+      - name: Vérifier git pour le garde des sources
+        shell: bash
+        run: |
+          git --version
+          echo "dépôt superficiel : $(git rev-parse --is-shallow-repository)"
+          echo "fichiers suivis : $(git ls-files | wc -l)"
+          git check-attr eol -- ego-sentinelle.cmd lancer.ps1 export-4625.ps1
+
+      - name: Installer les dépendances de test
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Lancer la suite complète
+        shell: bash
+        run: >
+          python -m pytest -p no:cacheprovider -rs
+          --basetemp="$RUNNER_TEMP/pytest"
+          --cov --cov-report=term-missing
+
+      - name: Vérifier que les tests n'ont rien écrit dans le dépôt
+        shell: bash
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"

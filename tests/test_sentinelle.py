@@ -613,6 +613,13 @@ class TestCheminsNeutralises:
         elif option == "--modeles":
             modeles = piege
         else:
+            # La sortie doit échouer sur tous les systèmes. Linux accepte ce nom :
+            # un dossier de ce nom fait échouer l'écriture. Windows interdit les
+            # caractères de contrôle : mkdir échoue, et l'écriture aussi.
+            try:
+                piege.mkdir()
+            except OSError:
+                assert os.name == "nt", "seul Windows refuse ce nom de dossier"
             options = [option, piege]
 
         code, _, erreurs = lancer(capsys, export, "--modeles", modeles, *options)
